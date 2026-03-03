@@ -2274,7 +2274,7 @@ def indicador_lpa_trimestral(df_capital_social: pl.DataFrame, df_dre: pl.DataFra
     # Calculando lpa acumulado
     df = df.with_columns(
         pl.col('lpa')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('lpa_acum')
     )
@@ -2466,7 +2466,7 @@ def indicador_ebitda_trimestral(df_dre: pl.DataFrame, df_dfc: pl.DataFrame, cod_
     # Calculando o ebitda trimestral acumulado
     df_ebitda_trimestral_acumulada = df_ebitda_trimestral.with_columns(
         pl.col('ebitda')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('ebitda_acum')
     )
@@ -2922,7 +2922,7 @@ def indicador_roe_trimestral(df_dre: pl.DataFrame, df_bpp: pl.DataFrame, cod_cvm
     # Calculando o lucro líquido trimestral acumulado
     lucro_liquido_acumulado = lucro_liquido.with_columns(
         pl.col('lucro_liquido')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('lucro_liquido_acum')
     )
@@ -3074,7 +3074,7 @@ def indicador_roic_trimestral(df_dre: pl.DataFrame, df_bpp: pl.DataFrame, cod_cv
     # Calculando o ebit acumulado
     ebit_acumulado = ebit.with_columns(
         pl.col('ebit')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('ebit_acum')
     )
@@ -3100,7 +3100,7 @@ def indicador_roic_trimestral(df_dre: pl.DataFrame, df_bpp: pl.DataFrame, cod_cv
     # Calculando o ir acumulado
     ir_acumulado = ir.with_columns(
         pl.col('ir')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('ir_acum')
     )
@@ -3830,7 +3830,7 @@ def indicador_fco_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_fco: str) -
     # Calculando o fco acumulado
     expr_fcf_acum = (
         pl.col('fco_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('fco')
     )
@@ -3889,7 +3889,7 @@ def indicador_fci_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_fci: str) -
     # Calculando o fci acumulado
     expr_fcf_acum = (
         pl.col('fci_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('fci')
     )
@@ -3948,7 +3948,7 @@ def indicador_fcf_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_fcf: str) -
     # Calculando o fcf acumulado
     expr_fcf_acum = (
         pl.col('fcf_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('fcf')
     )
@@ -4061,7 +4061,7 @@ def indicador_capex_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, lst_cod_capex
         # Calculando o capex trimestral acumulado
         expr_acum = (
             pl.col(f'vl_conta_{i}_nao_acum')
-            .rolling_sum(window_size=4, min_periods=4) 
+            .rolling_sum(window_size=4, min_samples=4) 
             .round(2)                                   
             .alias(f'vl_conta_{i}_acum')
         )
@@ -4224,7 +4224,7 @@ def indicador_net_capex_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_depre
     # Calculando a depreciação acumulada
     expr_depreciacao_acum = (
         pl.col('depreciacao_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('depreciacao_acum')
     )
@@ -4309,7 +4309,7 @@ def indicador_rd(df_dre: pl.DataFrame, cod_cvm: int, cod_rd: str, anual: bool) -
         # Calculando o rd trimestral acumulado
         expr_rd_acum = (
             pl.col('rd')
-            .rolling_sum(window_size=4, min_periods=4) 
+            .rolling_sum(window_size=4, min_samples=4) 
             .round(2)                                   
         )
 
@@ -4486,7 +4486,7 @@ def indicador_change_in_non_cash_wc_trimestral(df_dfc: pl.DataFrame, cod_cvm: in
     # Calculando o change in non-cash wc trimestral acumulado
     expr_acum = (
         pl.col('change_in_non_cash_wc_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
         .alias('change_in_non_cash_wc')
     )
@@ -4610,7 +4610,7 @@ def indicador_reinvestment_rate_trimestral(df_dre: pl.DataFrame, cod_cvm: int, c
     # Calculando o ebit trimestral acumulado
     expr_ebit_acum = (
         pl.col('ebit')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
     )
 
@@ -4632,7 +4632,7 @@ def indicador_reinvestment_rate_trimestral(df_dre: pl.DataFrame, cod_cvm: int, c
     # Calculando o ir trimestral acumulado
     expr_ir_acum = (
         pl.col('ir')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
     )
 
@@ -4934,7 +4934,7 @@ def indicador_new_borrowing_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, lst_c
         # Calculando o capex trimestral acumulado
         expr_new_borrowing_acum = (
             pl.col(f'vl_conta_{i}_nao_acum')
-            .rolling_sum(window_size=4, min_periods=4) 
+            .rolling_sum(window_size=4, min_samples=4) 
             .round(2)                                   
             .alias(f'vl_conta_{i}_acum')
         )
@@ -5071,7 +5071,7 @@ def indicador_debt_paid_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, lst_cod_d
         # Calculando o debt paid trimestral acumulado
         expr_debt_paid_acum = (
             pl.col(f'vl_conta_{i}_nao_acum')
-            .rolling_sum(window_size=4, min_periods=4) 
+            .rolling_sum(window_size=4, min_samples=4) 
             .round(2)                                   
             .alias(f'vl_conta_{i}_acum')
         )
@@ -5245,7 +5245,7 @@ def indicador_fcfe_trimestral(
     # Calculando o lucro líquido trimestral acumulado
     expr_lucro_liquido_acum = (
         pl.col('lucro_liquido')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
     )
 
@@ -5280,7 +5280,7 @@ def indicador_fcfe_trimestral(
     # Calculando a depreciação trimestral acumulada
     expr_depreciacao_acum = (
         pl.col('depreciacao_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)    
         .alias('depreciacao')                               
     )
@@ -5450,7 +5450,7 @@ def indicador_fcff_trimestral(
     # Calculando o ebit trimestral acumulado
     expr_ebit_acum = (
         pl.col('ebit')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)                                   
     )
 
@@ -5485,7 +5485,7 @@ def indicador_fcff_trimestral(
     # Calculando a depreciação trimestral acumulada
     expr_depreciacao_acum = (
         pl.col('depreciacao_nao_acum')
-        .rolling_sum(window_size=4, min_periods=4) 
+        .rolling_sum(window_size=4, min_samples=4) 
         .round(2)    
         .alias('depreciacao')                               
     )
