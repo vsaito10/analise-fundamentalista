@@ -26,7 +26,9 @@ statement_keys_map = {
         "consolidated balance sheets, as of december 31",
         "dow consolidated balance sheets",
         "consolidated balance sheets (unaudited)",
-        "condensed consolidated balance sheets (unaudited)"
+        "condensed consolidated balance sheets (unaudited)",
+        "condensed balance sheets",
+        "condensed balance sheet"
     ],
 
     "income_statement": [
@@ -52,7 +54,10 @@ statement_keys_map = {
         "consolidated statements of income - southern",
         "consolidated statements of operations and comprehensive income",
         "consolidated statements of comprehensive income",
-        "condensed consolidated statements of operations (unaudited)"
+        "condensed consolidated statements of operations (unaudited)",
+        "statements of operations",
+        "statement of operations",
+        "condensed statements of operations"
     ],
 
     "income_statement_2": [
@@ -74,7 +79,9 @@ statement_keys_map = {
         "condensed consolidated statements of cash flows - unaudited",
         "consolidated statements of cash flows (unaudited)",
         "consolidated statements of cash flows - southern",
-        "condensed consolidated statements of cash flows (unaudited)"
+        "condensed consolidated statements of cash flows (unaudited)",
+        "statements of cash flows",
+        "statement of cash flows"
     ],
 
     "cross_holding": [
