@@ -28,7 +28,7 @@ statement_keys_map = {
         "consolidated balance sheets (unaudited)",
         "condensed consolidated balance sheets (unaudited)",
         "condensed balance sheets",
-        "condensed balance sheet"
+        "condensed balance sheet",
     ],
 
     "income_statement": [
