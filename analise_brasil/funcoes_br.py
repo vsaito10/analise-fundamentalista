@@ -126,7 +126,7 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'JOPA4') | (df['TICKER'] == 'MDIA3') |(df['TICKER'] == 'ODER4'),
 
     # ALUGUEL DE CARRO
-    (df['TICKER'] == 'MOVI3') | (df['TICKER'] == 'RENT3'),
+    (df['TICKER'] == 'MOVI3') | (df['TICKER'] == 'RENT3') | (df['TICKER'] == 'RENT4'),
 
     # ALUGUEL DE MAQUINAS E EQUIPAMENTOS
     (df['TICKER'] == 'ARML3') | (df['TICKER'] == 'MILS3') | (df['TICKER'] == 'VAMO3'),
@@ -139,7 +139,8 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'PLAS3'),	
 
     # AVIACAO
-    (df['TICKER'] == 'AZUL4') | (df['TICKER'] == 'GOLL4'),
+    (df['TICKER'] == 'AZUL4') | (df['TICKER'] == 'AZUL53') | (df['TICKER'] == 'AZUL54') |
+    (df['TICKER'] == 'GOLL4') | (df['TICKER'] == 'GOLL54'),
 
     # ACUCAR E ALCOOL
     (df['TICKER'] == 'BSEV3') | (df['TICKER'] == 'JALL3')	| (df['TICKER'] == 'SMTO3'),	
@@ -148,7 +149,7 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'ABCB4') | (df['TICKER'] == 'BAZA3') | (df['TICKER'] == 'BBAS3') |
     (df['TICKER'] == 'BBDC3') | (df['TICKER'] == 'BBDC4') | (df['TICKER'] == 'BEES3') |
     (df['TICKER'] == 'BEES4') | (df['TICKER'] == 'BGIP3') | (df['TICKER'] == 'BGIP4') |
-    (df['TICKER'] == 'BMEB3') | (df['TICKER'] == 'BMEB4')	| (df['TICKER'] == 'BMGB4') |
+    (df['TICKER'] == 'BMEB3') | (df['TICKER'] == 'BMEB4') | (df['TICKER'] == 'BMGB4') |
     (df['TICKER'] == 'BMIN3') | (df['TICKER'] == 'BMIN4') | (df['TICKER'] == 'BNBR3') |
     (df['TICKER'] == 'BPAC11')| (df['TICKER'] == 'BPAC3') | (df['TICKER'] == 'BPAC5') |
     (df['TICKER'] == 'BPAN4') | (df['TICKER'] == 'BPAR3') | (df['TICKER'] == 'BRBI11')|
@@ -157,9 +158,9 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'BSLI4') | (df['TICKER'] == 'ITSA3') | (df['TICKER'] == 'ITSA4') | 
     (df['TICKER'] == 'ITUB3') | (df['TICKER'] == 'ITUB4') | (df['TICKER'] == 'MODL11')| 
     (df['TICKER'] == 'MODL3') | (df['TICKER'] == 'MODL4') | (df['TICKER'] == 'PINE3') | 
-    (df['TICKER'] == 'PINE4') | (df['TICKER'] == 'RPAD3') | (df['TICKER'] == 'RPAD5') | 
-    (df['TICKER'] == 'RPAD6') | (df['TICKER'] == 'SANB11')| (df['TICKER'] == 'SANB3') | 
-    (df['TICKER'] == 'SANB4'),
+    (df['TICKER'] == 'PINE4') | (df['TICKER'] == 'PINE14') | (df['TICKER'] == 'RPAD3') | 
+    (df['TICKER'] == 'RPAD5') | (df['TICKER'] == 'RPAD6') | (df['TICKER'] == 'SANB11')| 
+    (df['TICKER'] == 'SANB3') | (df['TICKER'] == 'SANB4'),
 
     # BEBIDAS
     (df['TICKER'] == 'ABEV3'),
@@ -174,14 +175,14 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     
     # CONSTRUÇAO CIVIL
     (df['TICKER'] == 'AVLL3') | (df['TICKER'] == 'CALI3') | (df['TICKER'] == 'CRDE3') |
-    (df['TICKER'] == 'CURY3') | (df['TICKER'] == 'CYRE3') | (df['TICKER'] == 'DIRR3') | 
-    (df['TICKER'] == 'EVEN3') | (df['TICKER'] == 'EZTC3') | (df['TICKER'] == 'FIEI3') |
-    (df['TICKER'] == 'GFSA3') |	(df['TICKER'] == 'HBOR3') | (df['TICKER'] == 'JFEN3') | 
-    (df['TICKER'] == 'JHSF3')	| (df['TICKER'] == 'LAVV3') | (df['TICKER'] == 'MDNE3') | 
-    (df['TICKER'] == 'MELK3') | (df['TICKER'] == 'MRVE3') | (df['TICKER'] == 'MTRE3') | 
-    (df['TICKER'] == 'PDGR3') | (df['TICKER'] == 'PLPL3') | (df['TICKER'] == 'RDNI3') | 
-    (df['TICKER'] == 'RSID3') | (df['TICKER'] == 'TCSA3') | (df['TICKER'] == 'TEND3') | 
-    (df['TICKER'] == 'TRIS3') | (df['TICKER'] == 'VIVR3'),
+    (df['TICKER'] == 'CURY3') | (df['TICKER'] == 'CYRE3') | (df['TICKER'] == 'CYRE4') | 
+    (df['TICKER'] == 'DIRR3') | (df['TICKER'] == 'EVEN3') | (df['TICKER'] == 'EZTC3') | 
+    (df['TICKER'] == 'FIEI3') | (df['TICKER'] == 'GFSA3') |	(df['TICKER'] == 'HBOR3') | 
+    (df['TICKER'] == 'JFEN3') | (df['TICKER'] == 'JHSF3') | (df['TICKER'] == 'LAVV3') | 
+    (df['TICKER'] == 'MDNE3') | (df['TICKER'] == 'MELK3') | (df['TICKER'] == 'MRVE3') | 
+    (df['TICKER'] == 'MTRE3') | (df['TICKER'] == 'PDGR3') | (df['TICKER'] == 'PLPL3') | 
+    (df['TICKER'] == 'RDNI3') | (df['TICKER'] == 'RSID3') | (df['TICKER'] == 'TCSA3') | 
+    (df['TICKER'] == 'TEND3') | (df['TICKER'] == 'TRIS3') | (df['TICKER'] == 'VIVR3'),
 
     # CONSTRUÇAO E ENGENHARIA
     (df['TICKER'] == 'AZEV3') | (df['TICKER'] == 'AZEV4') | (df['TICKER'] == 'ETER3') |
@@ -193,28 +194,28 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'AESB3') | (df['TICKER'] == 'AFLT3') | (df['TICKER'] == 'ALUP11')|
     (df['TICKER'] == 'ALUP3') | (df['TICKER'] == 'ALUP4') | (df['TICKER'] == 'AURE3') |
     (df['TICKER'] == 'AXIA3') | (df['TICKER'] == 'AXIA5') | (df['TICKER'] == 'AXIA6') |
-    (df['TICKER'] == 'CBEE3') | (df['TICKER'] == 'CEBR3') | (df['TICKER'] == 'CEBR5') |
-    (df['TICKER'] == 'CEBR6') | (df['TICKER'] == 'CEEB3') | (df['TICKER'] == 'CEEB5') |
-    (df['TICKER'] == 'CEED3') | (df['TICKER'] == 'CEED4') | (df['TICKER'] == 'CEPE5') |
-    (df['TICKER'] == 'CEPE6') | (df['TICKER'] == 'CLSC3') | (df['TICKER'] == 'CLSC4') | 
-    (df['TICKER'] == 'CMIG3') | (df['TICKER'] == 'CMIG4') | (df['TICKER'] == 'COCE3') | 
-    (df['TICKER'] == 'COCE5') | (df['TICKER'] == 'COCE6') | (df['TICKER'] == 'CPFE3') |
-    (df['TICKER'] == 'CPLE11')| (df['TICKER'] == 'CPLE3') | (df['TICKER'] == 'CPLE5') | 
-    (df['TICKER'] == 'CPLE6') | (df['TICKER'] == 'CSRN3') | (df['TICKER'] == 'CSRN5') | 
-    (df['TICKER'] == 'CSRN6') | (df['TICKER'] == 'EGIE3') | (df['TICKER'] == 'EKTR3') | 
-    (df['TICKER'] == 'EKTR4') | (df['TICKER'] == 'ELET3') | (df['TICKER'] == 'ELET5') | 
-    (df['TICKER'] == 'ELET6') | (df['TICKER'] == 'EMAE3') | (df['TICKER'] == 'EMAE4') | 
-    (df['TICKER'] == 'ENBR3') | (df['TICKER'] == 'ENEV3') | (df['TICKER'] == 'ENGI11')| 
-    (df['TICKER'] == 'ENGI3') | (df['TICKER'] == 'ENGI4') | (df['TICKER'] == 'ENMT3') | 
-    (df['TICKER'] == 'ENMT4') | (df['TICKER'] == 'EQPA3') | (df['TICKER'] == 'EQPA5') | 
-    (df['TICKER'] == 'EQPA6') | (df['TICKER'] == 'EQPA7') | (df['TICKER'] == 'EQTL3') | 
-    (df['TICKER'] == 'GEPA3') | (df['TICKER'] == 'GEPA4') | (df['TICKER'] == 'GPAR3') | 
-    (df['TICKER'] == 'ISAE3') | (df['TICKER'] == 'ISAE4') | (df['TICKER'] == 'LIGT3') |
-    (df['TICKER'] == 'LIPR3') | (df['TICKER'] == 'MEGA3') | (df['TICKER'] == 'NEOE3') | 
-    (df['TICKER'] == 'REDE3') | (df['TICKER'] == 'RNEW11')| (df['TICKER'] == 'RNEW3') | 
-    (df['TICKER'] == 'RNEW4') | (df['TICKER'] == 'SRNA3') | (df['TICKER'] == 'TAEE11')| 
-    (df['TICKER'] == 'TAEE3') | (df['TICKER'] == 'TAEE4') | (df['TICKER'] == 'TRPL3') | 
-    (df['TICKER'] == 'TRPL4'),
+    (df['TICKER'] == 'AXIA7') | (df['TICKER'] == 'CBEE3') | (df['TICKER'] == 'CEBR3') | 
+    (df['TICKER'] == 'CEBR5') | (df['TICKER'] == 'CEBR6') | (df['TICKER'] == 'CEEB3') | 
+    (df['TICKER'] == 'CEEB5') | (df['TICKER'] == 'CEED3') | (df['TICKER'] == 'CEED4') | 
+    (df['TICKER'] == 'CEPE5') | (df['TICKER'] == 'CEPE6') | (df['TICKER'] == 'CLSC3') | 
+    (df['TICKER'] == 'CLSC4') | (df['TICKER'] == 'CMIG3') | (df['TICKER'] == 'CMIG4') | 
+    (df['TICKER'] == 'COCE3') | (df['TICKER'] == 'COCE5') | (df['TICKER'] == 'COCE6') | 
+    (df['TICKER'] == 'CPFE3') | (df['TICKER'] == 'CPLE11')| (df['TICKER'] == 'CPLE3') | 
+    (df['TICKER'] == 'CPLE5') | (df['TICKER'] == 'CPLE6') | (df['TICKER'] == 'CSRN3') | 
+    (df['TICKER'] == 'CSRN5') | (df['TICKER'] == 'CSRN6') | (df['TICKER'] == 'EGIE3') | 
+    (df['TICKER'] == 'EKTR3') | (df['TICKER'] == 'EKTR4') | (df['TICKER'] == 'ELET3') | 
+    (df['TICKER'] == 'ELET5') | (df['TICKER'] == 'ELET6') | (df['TICKER'] == 'EMAE3') | 
+    (df['TICKER'] == 'EMAE4') | (df['TICKER'] == 'ENBR3') | (df['TICKER'] == 'ENEV3') | 
+    (df['TICKER'] == 'ENGI11')| (df['TICKER'] == 'ENGI3') | (df['TICKER'] == 'ENGI4') | 
+    (df['TICKER'] == 'ENMT3') | (df['TICKER'] == 'ENMT4') | (df['TICKER'] == 'EQPA3') | 
+    (df['TICKER'] == 'EQPA5') | (df['TICKER'] == 'EQPA6') | (df['TICKER'] == 'EQPA7') | 
+    (df['TICKER'] == 'EQTL3') | (df['TICKER'] == 'GEPA3') | (df['TICKER'] == 'GEPA4') | 
+    (df['TICKER'] == 'GPAR3') | (df['TICKER'] == 'ISAE3') | (df['TICKER'] == 'ISAE4') | 
+    (df['TICKER'] == 'LIGT3') | (df['TICKER'] == 'LIPR3') | (df['TICKER'] == 'MEGA3') | 
+    (df['TICKER'] == 'NEOE3') | (df['TICKER'] == 'REDE3') | (df['TICKER'] == 'RNEW11')| 
+    (df['TICKER'] == 'RNEW3') | (df['TICKER'] == 'RNEW4') | (df['TICKER'] == 'SRNA3') | 
+    (df['TICKER'] == 'TAEE11')| (df['TICKER'] == 'TAEE3') | (df['TICKER'] == 'TAEE4') | 
+    (df['TICKER'] == 'TRPL3') | (df['TICKER'] == 'TRPL4'),
 
     # EQUIPAMENTOS E SERVIÇOS
     (df['TICKER'] == 'LUPA3') | (df['TICKER'] == 'OSXB3'),
@@ -310,12 +311,12 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'ESPA3') | (df['TICKER'] == 'NTCO3') | (df['TICKER'] == 'NATU3'),	
     
     #PROGRAMAS E SERVICOS
-    (df['TICKER'] == 'BMOB3') | (df['TICKER'] == 'CASH3') | (df['TICKER'] == 'CLSA3') |	
-    (df['TICKER'] == 'DOTZ3') | (df['TICKER'] == 'ENJU3') | (df['TICKER'] == 'IFCM3') |
-    (df['TICKER'] == 'LINX3') | (df['TICKER'] == 'LVTC3') | (df['TICKER'] == 'LWSA3') |
-    (df['TICKER'] == 'NGRD3') | (df['TICKER'] == 'NINJ3') | (df['TICKER'] == 'OBTC3') |
-    (df['TICKER'] == 'REAG3') | (df['TICKER'] == 'SQIA3') | (df['TICKER'] == 'TOTS3') | 
-    (df['TICKER'] == 'TRAD3'),
+    (df['TICKER'] == 'ARND3') | (df['TICKER'] == 'BMOB3') | (df['TICKER'] == 'CASH3') | 
+    (df['TICKER'] == 'CLSA3') |	(df['TICKER'] == 'DOTZ3') | (df['TICKER'] == 'ENJU3') | 
+    (df['TICKER'] == 'IFCM3') | (df['TICKER'] == 'LINX3') | (df['TICKER'] == 'LVTC3') | 
+    (df['TICKER'] == 'LWSA3') | (df['TICKER'] == 'NGRD3') | (df['TICKER'] == 'NINJ3') | 
+    (df['TICKER'] == 'OBTC3') | (df['TICKER'] == 'REAG3') | (df['TICKER'] == 'SQIA3') | 
+    (df['TICKER'] == 'TOTS3') | (df['TICKER'] == 'TRAD3') | (df['TICKER'] == 'WDCN3'),
 
     #QUIMICOS
     (df['TICKER'] == 'BRKM3') | (df['TICKER'] == 'BRKM5') | (df['TICKER'] == 'BRKM6') |
@@ -394,17 +395,17 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
 
     #VAREJO
     (df['TICKER'] == 'ALLD3') | (df['TICKER'] == 'ALPA3') | (df['TICKER'] == 'ALPA4') |
-    (df['TICKER'] == 'AMAR3') | (df['TICKER'] == 'AMER3') | (df['TICKER'] == 'ARZZ3') | 
-    (df['TICKER'] == 'AZZA3') | (df['TICKER'] == 'BHIA3') | (df['TICKER'] == 'CAMB3') | 
-    (df['TICKER'] == 'CEAB3') | (df['TICKER'] == 'CGRA3') | (df['TICKER'] == 'CGRA4') | 
-    (df['TICKER'] == 'GRND3') | (df['TICKER'] == 'GUAR3') | (df['TICKER'] == 'LJQQ3') | 
-    (df['TICKER'] == 'VSTE3') | (df['TICKER'] == 'LREN3') | (df['TICKER'] == 'MBLY3') | 
-    (df['TICKER'] == 'MGLU3') | (df['TICKER'] == 'MNDL3') | (df['TICKER'] == 'PETZ3') | 
-    (df['TICKER'] == 'SBFG3') | (df['TICKER'] == 'SLED3') | (df['TICKER'] == 'SLED4') | 
-    (df['TICKER'] == 'SOMA3') | (df['TICKER'] == 'TECN3') | (df['TICKER'] == 'TFCO4') | 
-    (df['TICKER'] == 'TOKY3') | (df['TICKER'] == 'VIIA3') | (df['TICKER'] == 'VIVA3') | 
-    (df['TICKER'] == 'VULC3') | (df['TICKER'] == 'WEST3') | (df['TICKER'] == 'WHRL3') | 
-    (df['TICKER'] == 'WHRL4'),
+    (df['TICKER'] == 'AMAR3') | (df['TICKER'] == 'AMER3') | (df['TICKER'] == 'ARZZ3') |
+    (df['TICKER'] == 'AUAU3') | (df['TICKER'] == 'AZZA3') | (df['TICKER'] == 'BHIA3') | 
+    (df['TICKER'] == 'CAMB3') | (df['TICKER'] == 'CEAB3') | (df['TICKER'] == 'CGRA3') | 
+    (df['TICKER'] == 'CGRA4') | (df['TICKER'] == 'GRND3') | (df['TICKER'] == 'GUAR3') | 
+    (df['TICKER'] == 'LJQQ3') | (df['TICKER'] == 'VSTE3') | (df['TICKER'] == 'LREN3') | 
+    (df['TICKER'] == 'MBLY3') | (df['TICKER'] == 'MGLU3') | (df['TICKER'] == 'MNDL3') | 
+    (df['TICKER'] == 'PETZ3') | (df['TICKER'] == 'RIAA3') | (df['TICKER'] == 'SBFG3') | 
+    (df['TICKER'] == 'SLED3') | (df['TICKER'] == 'SLED4') | (df['TICKER'] == 'SOMA3') | 
+    (df['TICKER'] == 'TECN3') | (df['TICKER'] == 'TFCO4') | (df['TICKER'] == 'TOKY3') | 
+    (df['TICKER'] == 'VIIA3') | (df['TICKER'] == 'VIVA3') | (df['TICKER'] == 'VULC3') | 
+    (df['TICKER'] == 'WEST3') | (df['TICKER'] == 'WHRL3') | (df['TICKER'] == 'WHRL4'),
     
     #VIAGEM E LAZER
     (df['TICKER'] == 'AHEB3') | (df['TICKER'] == 'AHEB5') | (df['TICKER'] == 'AHEB6') |
