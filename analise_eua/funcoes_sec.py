@@ -179,6 +179,9 @@ header = {
   "User-Agent": "vitorsaito95@email.com"
 }
 
+TEN_K_FORMS = {"10-K"}
+TEN_Q_FORMS = {"10-Q"}
+
 
 def cik_matching_ticker(ticker, headers=header):
 
@@ -223,6 +226,29 @@ def get_filtered_filings(ticker, ten_k=True, just_accession_numbers=False, heade
         return accession_df
     else:
         return df
+
+
+def _accession_numbers_for_forms(
+    ticker,
+    forms,
+    headers=header,
+    empty_message=None,
+):
+    company_filings_df = get_submission_data_for_ticker(
+        ticker, only_filings_df=True, headers=headers
+    )
+    filings_df = company_filings_df[company_filings_df["form"].isin(forms)]
+
+    if filings_df.empty:
+        if empty_message is None:
+            forms_text = ", ".join(sorted(forms))
+            empty_message = f"No filings found for ticker {ticker} and forms {forms_text}"
+        raise ValueError(empty_message)
+
+    filings_df = filings_df.set_index("reportDate")
+    accession_nums = filings_df["accessionNumber"]
+    accession_nums.index = pd.to_datetime(accession_nums.index)
+    return accession_nums
     
 
 def get_facts(ticker, headers=header):
@@ -236,12 +262,28 @@ def get_facts(ticker, headers=header):
     return company_facts
 
 
+def _get_accounting_facts_block(facts):
+    facts_root = facts.get("facts", {})
+
+    if "us-gaap" in facts_root:
+        return facts_root["us-gaap"], "us-gaap"
+
+    if "ifrs-full" in facts_root:
+        return facts_root["ifrs-full"], "ifrs-full"
+
+    available_taxonomies = ", ".join(sorted(facts_root.keys()))
+    raise KeyError(
+        "No supported accounting taxonomy found in companyfacts. "
+        f"Available taxonomies: {available_taxonomies}"
+    )
+
+
 def facts_DF(ticker, headers=header):
 
     facts = get_facts(ticker, headers)
-    us_gaap_data = facts["facts"]["us-gaap"]
+    accounting_data, _ = _get_accounting_facts_block(facts)
     df_data = []
-    for fact, details in us_gaap_data.items():
+    for fact, details in accounting_data.items():
         for unit in details["units"]:
             for item in details["units"][unit]:
                 row = item.copy()
@@ -253,36 +295,1127 @@ def facts_DF(ticker, headers=header):
     df["start"] = pd.to_datetime(df["start"])
     df = df.drop_duplicates(subset=["fact", "end", "val"])
     df.set_index("end", inplace=True)
-    labels_dict = {fact: details["label"] for fact, details in us_gaap_data.items()}
+    labels_dict = {fact: details["label"] for fact, details in accounting_data.items()}
     
     return df, labels_dict
 
 
 def annual_facts(ticker, headers=header):
-    accession_nums = get_filtered_filings(
-        ticker, ten_k=True, just_accession_numbers=True
+    raw_df, label_dict = _annual_facts_raw(ticker, headers)
+    pivot = raw_df.T
+    pivot.rename(columns=label_dict, inplace=True)
+    return pivot.T
+
+
+BALANCE_SHEET_FACT_MAP = {
+    "Cash and Cash Equivalents": [
+        "CashAndCashEquivalentsAtCarryingValue",
+        "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+        "CashAndCashEquivalents",
+    ],
+    "Marketable Securities": [
+        "AvailableForSaleSecuritiesCurrent",
+        "AvailableForSaleDebtSecuritiesCurrent",
+        "DebtSecuritiesAvailableForSaleCurrent",
+        "ShortTermInvestments",
+        "AvailableForSaleDebtSecurities",
+        "MarketableSecuritiesCurrent",
+        "MarketableSecuritiesNoncurrent",
+        "AvailableForSaleSecuritiesNoncurrent",
+        "AvailableForSaleDebtSecuritiesNoncurrent",
+        "DebtSecuritiesAvailableForSaleNoncurrent",
+        "EquitySecuritiesFvNiCurrentAndNoncurrent",
+        "EquitySecuritiesWithoutReadilyDeterminableFairValueAmount",
+        "MarketableSecurities",
+        "nvda_MarketableSecuritiesAndEquitySecuritiesFVNI",
+    ],
+    "Accounts Receivable, Net, Current": [
+        "AccountsReceivableNetCurrent",
+        "ReceivablesNetCurrent",
+        "TradeAndOtherCurrentReceivables",
+        "CurrentTradeReceivables",
+        "TradeReceivablesCurrent",
+    ],
+    "Inventory, Net": [
+        "InventoryNet",
+        "InventoriesNetOfReserves",
+        "Inventories",
+    ],
+    "Other Assets, Current": [
+        "OtherAssetsCurrent",
+        "OtherCurrentAssets",
+    ],
+    "Assets, Current": [
+        "AssetsCurrent",
+        "CurrentAssets",
+    ],
+    "Property, Plant and Equipment, Net": [
+        "PropertyPlantAndEquipmentNet",
+        "PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization",
+        "PropertyPlantAndEquipment",
+    ],
+    "Operating Lease Right-of-Use Asset": [
+        "OperatingLeaseRightOfUseAsset",
+        "OperatingLeaseRightOfUseAssetNet",
+    ],
+    "Intangible Assets, Net": [
+        "FiniteLivedIntangibleAssetsNet",
+        "FiniteLivedIntangibleAssetsNetExcludingGoodwill",
+        "IndefiniteLivedIntangibleAssetsExcludingGoodwill",
+        "IntangibleAssetsNetExcludingGoodwill",
+        "IntangibleAssetsOtherThanGoodwill",
+    ],
+    "Goodwill": [
+        "Goodwill",
+    ],
+    "Other Assets, Noncurrent": [
+        "OtherAssetsNoncurrent",
+        "OtherNoncurrentAssets",
+    ],
+    "Assets": [
+        "Assets",
+    ],
+    "Accounts Payable, Current": [
+        "AccountsPayableCurrent",
+        "AccountsPayableTradeCurrent",
+        "AccountsPayableAndAccruedLiabilitiesCurrent",
+        "AccountsPayableOtherCurrent",
+        "TradeAndOtherCurrentPayables",
+        "CurrentTradePayables",
+        "TradePayablesCurrent",
+    ],
+    "Accrued Liabilities, Current": [
+        "AccruedLiabilitiesCurrent",
+        "EmployeeRelatedLiabilitiesCurrent",
+        "OperatingLeaseLiabilityCurrentAndNoncurrent",
+        "CurrentAccrualsAndCurrentDeferredIncomeIncludingCurrentContractLiabilities",
+        "OtherCurrentLiabilities",
+    ],
+    "Contract with Customer, Liability, Current": [
+        "ContractWithCustomerLiabilityCurrent",
+        "DeferredRevenueCurrent",
+        "CustomerAdvancesCurrent",
+        "fb_ContractWithCustomerLiabilityAndUnusedDeposits",
+        "meta_ContractWithCustomerLiabilityAndUnusedDeposits",
+    ],
+    "Operating Lease Liability, Current": [
+        "OperatingLeaseLiabilityCurrent",
+        "OperatingLeaseLiability",
+        "LesseeOperatingLeaseLiabilityCurrent",
+        "OperatingLeaseLiabilitiesCurrent",
+        "OperatingLeaseLiabilities",
+        "OperatingLeaseCurrent",
+        "LeaseLiabilitiesCurrent",
+    ],
+    "Finance Lease Liability, Current": [
+        "FinanceLeaseLiabilityCurrent",
+        "LesseeFinanceLeaseLiabilityCurrent",
+        "FinanceLeaseCurrent",
+    ],
+    "Lease Liabilities, Current": [
+        "LeaseLiabilitiesCurrent",
+    ],
+    "Liabilities, Current": [
+        "LiabilitiesCurrent",
+        "CurrentLiabilities",
+    ],
+    "Short-term Debt": [
+        "DebtCurrent",
+        "ShortTermBorrowings",
+        "CommercialPaper",
+        "ShortTermBankLoans",
+        "BankOverdrafts",
+        "LongTermDebtCurrent",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths",
+        "CurrentPortionOfLongTermDebt",
+        "LongTermDebtCurrentMaturities",
+        "LineOfCreditFacilityAmountOutstanding",
+        "ShortTermDebt",
+        "CurrentBorrowings",
+        "CurrentPortionOfBorrowings",
+    ],
+    "Long-term Liabilities - Current Portion": [
+        "LongTermDebtCurrent",
+        "LongTermDebtMaturitiesRepaymentsOfPrincipalInNextTwelveMonths",
+        "CurrentPortionOfLongTermDebt",
+        "LongTermDebtCurrentMaturities",
+        "CurrentPortionOfBorrowings",
+        "CurrentPortionOfNoncurrentBorrowings",
+        "CurrentPortionOfBankLoans",
+    ],
+    "Long-term Debt, Noncurrent": [
+        "LongTermDebtNoncurrent",
+        "LongTermDebtAndCapitalLeaseObligations",
+        "LongTermDebtAndFinanceLeaseObligations",
+        "LongTermDebt",
+        "LongTermDebtFairValue",
+        "NoncurrentBorrowings",
+        "BorrowingsNoncurrent",
+    ],
+    "Long-term Bank Loans": [
+        "LongTermBorrowings",
+        "LongTermBankLoans",
+        "BankLoansNoncurrent",
+        "BorrowingsNoncurrent",
+        "NoncurrentBorrowings",
+    ],
+    "Deferred Tax Liabilities, Net, Noncurrent": [
+        "DeferredTaxLiabilitiesNetNoncurrent",
+        "DeferredTaxLiabilitiesNoncurrent",
+    ],
+    "Contract with Customer, Liability, Noncurrent": [
+        "ContractWithCustomerLiabilityNoncurrent",
+        "DeferredRevenueNoncurrent",
+        "CustomerAdvancesNoncurrent",
+    ],
+    "Operating Lease Liability, Noncurrent": [
+        "OperatingLeaseLiabilityNoncurrent",
+        "OperatingLeaseLiabilitiesNoncurrent",
+        "OperatingLeaseLiability",
+        "LesseeOperatingLeaseLiabilityNoncurrent",
+        "OperatingLeaseLiabilities",
+        "LongTermOperatingLeaseLiabilities",
+        "OperatingLeaseNoncurrent",
+        "LeaseLiabilitiesNoncurrent",
+    ],
+    "Finance Lease Liability, Noncurrent": [
+        "FinanceLeaseLiabilityNoncurrent",
+        "LesseeFinanceLeaseLiabilityNoncurrent",
+        "FinanceLeaseNoncurrent",
+    ],
+    "Lease Liabilities, Noncurrent": [
+        "LeaseLiabilitiesNoncurrent",
+    ],
+    "Other Liabilities, Noncurrent": [
+        "OtherLiabilitiesNoncurrent",
+        "OtherNoncurrentLiabilities",
+    ],
+    "Liabilities": [
+        "Liabilities",
+    ],
+    "Common Stocks, Including Additional Paid in Capital": [
+        "CommonStocksIncludingAdditionalPaidInCapital",
+        "AdditionalPaidInCapitalCommonStock",
+        "CommonStocksIncludingAdditionalPaidInCapitalAndRetainedEarnings",
+        "IssuedCapital",
+        "ShareCapital",
+        "OtherReserves",
+    ],
+    "Retained Earnings (Accumulated Deficit)": [
+        "RetainedEarningsAccumulatedDeficit",
+        "RetainedEarnings",
+    ],
+    "Accumulated Other Comprehensive Income (Loss), Net of Tax": [
+        "AccumulatedOtherComprehensiveIncomeLossNetOfTax",
+        "OtherReserves",
+    ],
+    "Stockholders' Equity": [
+        "StockholdersEquity",
+        "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
+        "Equity",
+        "EquityAttributableToOwnersOfParent",
+    ],
+}
+
+
+INCOME_STATEMENT_FACT_MAP = {
+    "Revenue": [
+        "SalesRevenueNet",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "RevenueFromContractWithCustomerIncludingAssessedTax",
+        "Revenues",
+        "SalesRevenueServicesNet",
+        "AdvertisingRevenue",
+        "CloudRevenue",
+        "SalesRevenueGoodsNet",
+        "Revenue",
+    ],
+    "Cost of Revenue": [
+        "CostOfRevenue",
+        "CostOfGoodsSold",
+        "CostOfSales",
+        "CostOfGoodsAndServicesSold",
+        "CostOfServices",
+        "msft_CostOfServicesAndOther",
+        "CostOfSales",
+    ],
+    "Gross Profit": [
+        "GrossProfit",
+    ],
+    "Research and Development Expense": [
+        "ResearchAndDevelopmentExpense",
+        "ResearchAndDevelopmentAssetAcquiredOtherThanThroughBusinessCombinationWrittenOff",
+    ],
+    "Selling, General and Administrative Expense": [
+        "SellingGeneralAndAdministrativeExpense",
+        "MarketingExpense",
+    ],
+    "Operating Expenses": [
+        "OperatingExpenses",
+        "CostsAndExpenses",
+        "OperatingCostsAndExpenses",
+        "OtherOperatingExpenses",
+    ],
+    "Operating Income": [
+        "OperatingIncomeLoss",
+        "IncomeLossFromOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "ProfitLossFromOperatingActivities",
+    ],
+    "Interest Expense": [
+        "InterestExpense",
+        "InterestAndDebtExpense",
+        "InterestExpenseNonoperating",
+    ],
+    "Other Nonoperating Income (Expense)": [
+        "OtherNonoperatingIncomeExpense",
+        "NonoperatingIncomeExpense",
+        "InterestAndOtherIncomeExpenseNet",
+        "OtherIncomeExpenseNet",
+        "GainsLossesOnSalesOfOtherAssets",
+        "msft_GainLossOnInvestmentsAndDerivativeInstruments",
+        "OtherGainsLosses",
+        "FinanceIncome",
+        "FinanceCosts",
+    ],
+    "Income before income tax": [
+        "IncomeBeforeTaxExpenseBenefit",
+        "PretaxIncomeLoss",
+        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "IncomeLossBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "ProfitLossBeforeTax",
+    ],
+    "Income tax expense": [
+        "IncomeTaxExpenseBenefit",
+        "CurrentTaxExpenseBenefit",
+        "DeferredTaxExpenseBenefit",
+        "IncomeTaxes",
+        "IncomeTaxExpenseContinuingOperations",
+    ],
+    "Net Income": [
+        "NetIncomeLoss",
+        "ProfitLoss",
+        "NetIncomeLossAvailableToCommonStockholdersBasic",
+        "ProfitLossAttributableToOwnersOfParent",
+    ],
+    "Basic EPS": [
+        "EarningsPerShareBasic",
+        "IncomeLossFromContinuingOperationsPerBasicShare",
+    ],
+    "Diluted EPS": [
+        "EarningsPerShareDiluted",
+        "IncomeLossFromContinuingOperationsPerDilutedShare",
+    ],
+    "Weighted Average Shares Outstanding, Basic": [
+        "WeightedAverageNumberOfSharesOutstandingBasic",
+        "WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+    ],
+    "Weighted Average Shares Outstanding, Diluted": [
+        "WeightedAverageNumberOfDilutedSharesOutstanding",
+        "WeightedAverageNumberOfShareOutstandingBasicAndDiluted",
+    ],
+}
+
+
+CASH_FLOW_FACT_MAP = {
+    "Net Cash Provided by (Used in) Operating Activities": [
+        "NetCashProvidedByUsedInOperatingActivities",
+        "NetCashProvidedByUsedInContinuingOperations",
+        "CashFlowsFromUsedInOperatingActivities",
+    ],
+    "Depreciation and Amortization": [
+        "DepreciationDepletionAndAmortization",
+        "DepreciationAmortizationAndAccretionNet",
+        "Depreciation",
+        "DepreciationExpense",
+        "DepreciationPropertyPlantAndEquipment",
+        "DepreciationAndImpairmentOfPropertyPlantAndEquipment",
+        "DepreciationPropertyRightofuseAsset",
+        "AmortizationOfIntangibleAssets",
+        "AmortisationExpense",
+        "AmortizationExpense",
+        "msft_DepreciationAmortizationAndOther",
+        "DepreciationAndAmortisationExpense",
+    ],
+    "Share-based Compensation": [
+        "ShareBasedCompensation",
+        "AllocatedShareBasedCompensationExpense",
+    ],
+    "Change in Accounts Receivable": [
+        "IncreaseDecreaseInAccountsReceivable",
+        "IncreaseDecreaseInReceivables",
+        "IncreaseDecreaseInTradeAndOtherReceivables",
+    ],
+    "Change in Inventory": [
+        "IncreaseDecreaseInInventories",
+        "IncreaseDecreaseInInventory",
+        "IncreaseDecreaseInInventories",
+    ],
+    "Change in Accounts Payable": [
+        "IncreaseDecreaseInAccountsPayable",
+        "IncreaseDecreaseInAccountsPayableAndAccruedLiabilities",
+        "IncreaseDecreaseInTradeAndOtherPayables",
+    ],
+    "Net Cash Provided by (Used in) Investing Activities": [
+        "NetCashProvidedByUsedInInvestingActivities",
+        "CashFlowsFromUsedInInvestingActivities",
+    ],
+    "Capital Expenditures": [
+        "PaymentsToAcquirePropertyPlantAndEquipment",
+        "PaymentsToAcquireProductiveAssets",
+        "PaymentsToAcquirePropertyPlantEquipmentAndOtherProductiveAssets",
+        "nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets",
+        "nvda_PaymentsForFinancedPropertyPlantAndEquipmentAndIntangibleAssetsFinancingActivities",
+        "nvda_PaymentsForFinancedPropertyPlantAndEquipmentFinancingActivities",
+        "PurchaseOfPropertyPlantAndEquipment",
+        "PaymentsToAcquireIntangibleAssets",
+    ],
+    "Purchases of Marketable Securities": [
+        "PaymentsToAcquireAvailableForSaleSecuritiesDebt",
+        "PaymentsToAcquireShortTermInvestments",
+        "PaymentsToAcquireAvailableForSaleSecurities",
+        "PaymentsToAcquireMarketableSecurities",
+        "PaymentsToAcquireInvestments",
+    ],
+    "Sales/Maturities of Marketable Securities": [
+        "ProceedsFromSaleOfAvailableForSaleSecuritiesDebt",
+        "ProceedsFromMaturitiesPrepaymentsAndCallsOfAvailableForSaleSecurities",
+        "ProceedsFromSaleMaturityAndCollectionsOfShortTermInvestments",
+        "ProceedsFromSaleOfAvailableForSaleSecurities",
+        "ProceedsFromSaleAndMaturityOfMarketableSecurities",
+        "ProceedsFromInvestments",
+        "msft_ProceedsFromInvestments",
+    ],
+    "Net Cash Provided by (Used in) Financing Activities": [
+        "NetCashProvidedByUsedInFinancingActivities",
+        "CashFlowsFromUsedInFinancingActivities",
+    ],
+    "Proceeds from Issuance of Long-term Debt": [
+        "ProceedsFromIssuanceOfLongTermDebt",
+        "ProceedsFromLongTermDebtAndOther",
+        "ProceedsFromIssuanceOfDebt",
+        "ProceedsFromIssuanceOfOtherLongTermDebt",
+        "ProceedsFromIssuanceOfSeniorLongTermDebt",
+        "ProceedsFromOtherDebt",
+        "ProceedsFromBorrowings",
+    ],
+    "Repayments of Debt": [
+        "RepaymentsOfLongTermDebt",
+        "RepaymentsOfDebt",
+        "RepaymentsOfShortTermDebt",
+        "RepaymentsOfLongTermDebtAndCapitalSecurities",
+        "RepaymentsOfOtherDebt",
+        "RepaymentsOfBorrowings",
+    ],
+    "Dividends Paid": [
+        "PaymentsOfDividends",
+        "PaymentsOfOrdinaryDividends",
+        "DividendsPaid",
+    ],
+    "Repurchases of Common Stock": [
+        "PaymentsForRepurchaseOfCommonStock",
+        "PaymentsForRepurchaseOfEquity",
+    ],
+    "Proceeds from Stock Plans": [
+        "ProceedsFromStockOptionsExercised",
+        "ExcessTaxBenefitFromShareBasedCompensationFinancingActivities",
+        "nvda_Netproceedspaymentsrelatedtoemployeestockplans",
+        "nvda_NetProceedsPaymentsRelatedToEmployeeStockPlans",
+    ],
+}
+
+STATEMENT_LABEL_ALIASES = {
+    "Cash and Cash Equivalents": [
+        "cash and cash equivalents",
+        "cash and cash equivalents at end of period",
+    ],
+    "Marketable Securities": [
+        "financial assets at fair value through profit or loss",
+        "financial assets at fair value through other comprehensive income",
+        "current financial assets at amortised cost",
+        "current financial assets at amortized cost",
+        "non-current financial assets at amortised cost",
+        "non-current financial assets at amortized cost",
+        "other financial assets current",
+        "other financial assets noncurrent",
+    ],
+    "Accounts Receivable, Net, Current": [
+        "trade receivables",
+        "trade receivables net",
+        "trade and other receivables",
+        "notes and accounts receivable",
+        "notes receivable",
+    ],
+    "Inventory, Net": [
+        "inventories",
+    ],
+    "Other Assets, Current": [
+        "other current assets",
+        "prepayments",
+    ],
+    "Assets, Current": [
+        "current assets",
+    ],
+    "Property, Plant and Equipment, Net": [
+        "property plant and equipment",
+        "property plant and equipment net",
+    ],
+    "Intangible Assets, Net": [
+        "intangible assets",
+        "intangible assets net",
+        "other intangible assets",
+    ],
+    "Goodwill": [
+        "goodwill",
+    ],
+    "Other Assets, Noncurrent": [
+        "other non-current assets",
+        "other noncurrent assets",
+    ],
+    "Assets": [
+        "assets",
+        "total assets",
+    ],
+    "Accounts Payable, Current": [
+        "accounts payable",
+        "trade payables",
+        "trade and other payables",
+        "payables",
+    ],
+    "Accrued Liabilities, Current": [
+        "accrued liabilities",
+        "other current liabilities",
+        "accruals",
+    ],
+    "Contract with Customer, Liability, Current": [
+        "contract liabilities current",
+        "contract liabilities",
+        "deferred revenue current",
+        "customer advances",
+    ],
+    "Liabilities, Current": [
+        "current liabilities",
+    ],
+    "Short-term Debt": [
+        "short-term borrowings",
+        "current borrowings",
+        "current portion of long-term borrowings",
+        "current portion of bonds payable",
+    ],
+    "Long-term Debt, Noncurrent": [
+        "long-term borrowings",
+        "non-current borrowings",
+        "noncurrent borrowings",
+        "bonds payable",
+    ],
+    "Other Liabilities, Noncurrent": [
+        "other non-current liabilities",
+        "other noncurrent liabilities",
+    ],
+    "Liabilities": [
+        "liabilities",
+        "total liabilities",
+    ],
+    "Common Stocks, Including Additional Paid in Capital": [
+        "issued capital",
+        "share capital",
+        "capital stock",
+        "capital surplus",
+        "additional paid-in capital",
+    ],
+    "Retained Earnings (Accumulated Deficit)": [
+        "retained earnings",
+        "unappropriated earnings",
+        "accumulated deficit",
+    ],
+    "Accumulated Other Comprehensive Income (Loss), Net of Tax": [
+        "other equity",
+        "other reserves",
+        "accumulated other comprehensive income",
+    ],
+    "Stockholders' Equity": [
+        "equity",
+        "equity attributable to owners of the parent",
+        "total equity",
+    ],
+    "Revenue": [
+        "revenue",
+        "revenues",
+        "net revenue",
+        "net revenues",
+        "sales",
+    ],
+    "Cost of Revenue": [
+        "cost of sales",
+        "cost of revenue",
+        "cost of goods sold",
+    ],
+    "Gross Profit": [
+        "gross profit",
+        "gross profit from operations",
+    ],
+    "Research and Development Expense": [
+        "research and development expenses",
+        "research and development expense",
+    ],
+    "Selling, General and Administrative Expense": [
+        "selling general and administrative expenses",
+        "general and administrative expenses",
+        "administrative expenses",
+    ],
+    "Operating Expenses": [
+        "operating expenses",
+        "total operating expenses",
+    ],
+    "Operating Income": [
+        "income from operations",
+        "operating income",
+        "profit from operations",
+        "profit from operating activities",
+    ],
+    "Interest Expense": [
+        "interest expense",
+        "finance costs",
+    ],
+    "Other Nonoperating Income (Expense)": [
+        "other income expenses",
+        "other gains and losses",
+        "other income",
+        "finance income",
+    ],
+    "Income before income tax": [
+        "profit before tax",
+        "income before tax",
+        "profit before income tax",
+    ],
+    "Income tax expense": [
+        "income tax expense",
+        "income tax expense benefit",
+    ],
+    "Net Income": [
+        "profit for the year",
+        "profit",
+        "net income",
+        "profit attributable to owners of the parent",
+        "profit attributable to shareholders of the parent",
+    ],
+    "Basic EPS": [
+        "basic earnings per share",
+        "basic eps",
+    ],
+    "Diluted EPS": [
+        "diluted earnings per share",
+        "diluted eps",
+    ],
+    "Weighted Average Shares Outstanding, Basic": [
+        "weighted average number of shares outstanding basic",
+        "weighted average ordinary shares basic",
+    ],
+    "Weighted Average Shares Outstanding, Diluted": [
+        "weighted average number of diluted shares outstanding",
+        "weighted average ordinary shares diluted",
+    ],
+    "Net Cash Provided by (Used in) Operating Activities": [
+        "net cash generated from operating activities",
+        "net cash provided by operating activities",
+        "cash flows from used in operating activities",
+    ],
+    "Depreciation and Amortization": [
+        "depreciation and amortisation expense",
+        "depreciation and amortization expense",
+        "depreciation amortisation and amortization",
+        "depreciation expense",
+        "depreciation of property plant and equipment",
+        "depreciation of right-of-use assets",
+        "amortisation expense",
+        "amortization expense",
+    ],
+    "Share-based Compensation": [
+        "share-based compensation",
+    ],
+    "Change in Accounts Receivable": [
+        "increase decrease in trade and other receivables",
+        "decrease increase in trade receivables",
+    ],
+    "Change in Inventory": [
+        "increase decrease in inventories",
+    ],
+    "Change in Accounts Payable": [
+        "increase decrease in trade and other payables",
+        "increase decrease in accounts payable",
+    ],
+    "Net Cash Provided by (Used in) Investing Activities": [
+        "net cash used in investing activities",
+        "net cash provided by investing activities",
+        "cash flows from used in investing activities",
+    ],
+    "Capital Expenditures": [
+        "acquisition of property plant and equipment",
+        "purchase of property plant and equipment",
+        "payments to acquire property plant and equipment",
+        "capital expenditures",
+    ],
+    "Net Cash Provided by (Used in) Financing Activities": [
+        "net cash generated from financing activities",
+        "net cash used in financing activities",
+        "cash flows from used in financing activities",
+    ],
+    "Proceeds from Issuance of Long-term Debt": [
+        "proceeds from borrowings",
+        "proceeds from long-term debt",
+    ],
+    "Repayments of Debt": [
+        "repayments of borrowings",
+        "repayment of bonds",
+        "repayment of long-term debt",
+    ],
+    "Dividends Paid": [
+        "dividends paid",
+        "cash dividends paid",
+    ],
+    "Repurchases of Common Stock": [
+        "repurchase of treasury shares",
+        "repurchases of common stock",
+    ],
+}
+
+
+def _facts_raw_for_forms(
+    ticker,
+    forms,
+    headers=header,
+    prefer_full_year=False,
+    prefer_quarter=False,
+    prefer_fy_match=False,
+    empty_message=None,
+):
+    accession_nums = _accession_numbers_for_forms(
+        ticker=ticker,
+        forms=forms,
+        headers=headers,
+        empty_message=empty_message,
     )
     df, label_dict = facts_DF(ticker, headers)
-    ten_k = df[df["accn"].isin(accession_nums)]
-    ten_k = ten_k[ten_k.index.isin(accession_nums.index)]
-    pivot = ten_k.pivot_table(values="val", columns="fact", index="end")
-    pivot.rename(columns=label_dict, inplace=True)
+    facts_df = df[df["accn"].isin(accession_nums)]
+    facts_df = facts_df[facts_df.index.isin(accession_nums.index)].reset_index()
 
+    duration_days = (facts_df["end"] - facts_df["start"]).dt.days
+    sort_columns = ["fact", "end"]
+
+    if prefer_fy_match:
+        fy_numeric = pd.to_numeric(facts_df["fy"], errors="coerce")
+        facts_df["matches_end_fy"] = fy_numeric.eq(facts_df["end"].dt.year)
+        sort_columns.append("matches_end_fy")
+
+    if prefer_full_year:
+        facts_df["is_full_year_duration"] = (
+            facts_df["start"].notna() & duration_days.ge(300)
+        )
+        sort_columns.append("is_full_year_duration")
+
+    if prefer_quarter:
+        facts_df["is_quarter_duration"] = (
+            facts_df["start"].notna() & duration_days.between(60, 120)
+        )
+        sort_columns.append("is_quarter_duration")
+
+    facts_df["is_instant_fact"] = facts_df["start"].isna()
+    sort_columns.extend(["is_instant_fact", "filed", "accn"])
+
+    facts_df = facts_df.sort_values(sort_columns)
+    facts_df = facts_df.drop_duplicates(subset=["fact", "end"], keep="last")
+    pivot = facts_df.pivot(index="end", columns="fact", values="val")
+
+    return pivot.T, label_dict
+
+
+def _annual_facts_raw(ticker, headers=header):
+    # Companyfacts can include the current year's 10-K values together with
+    # comparative prior-year columns and quarter-length periods for the same
+    # fact/end pair. Rank rows so we keep the filing that actually corresponds
+    # to the reported fiscal year-end instead of averaging incompatible values.
+    return _facts_raw_for_forms(
+        ticker=ticker,
+        forms=TEN_K_FORMS,
+        headers=headers,
+        prefer_full_year=True,
+        prefer_fy_match=True,
+    )
+
+
+def annual_facts_raw(ticker, headers=header):
+    raw_df, _ = _annual_facts_raw(ticker, headers)
+    return raw_df
+
+
+def _quarterly_facts_raw(ticker, headers=header):
+    # 10-Q filings can mix instant facts with year-to-date values for the same
+    # end date. Prefer quarter-length durations while keeping instant facts for
+    # balance-sheet style metrics.
+    return _facts_raw_for_forms(
+        ticker=ticker,
+        forms=TEN_Q_FORMS,
+        headers=headers,
+        prefer_quarter=True,
+    )
+
+
+def quarterly_facts_raw(ticker, headers=header):
+    raw_df, _ = _quarterly_facts_raw(ticker, headers)
+    return raw_df
+
+
+def _normalize_fact_label(value):
+    if value is None:
+        return ""
+
+    normalized = str(value).strip().lower()
+    normalized = normalized.replace(",", "")
+    normalized = normalized.replace("(", "")
+    normalized = normalized.replace(")", "")
+    normalized = normalized.replace("-", " ")
+    normalized = " ".join(normalized.split())
+    return normalized
+
+
+def _build_label_to_facts_map(label_dict):
+    label_to_facts = {}
+
+    for fact_name, label in label_dict.items():
+        normalized_label = _normalize_fact_label(label)
+        if not normalized_label:
+            continue
+        label_to_facts.setdefault(normalized_label, []).append(fact_name)
+
+    return label_to_facts
+
+
+def _candidate_fact_names(raw_df, candidate_fact, label_to_facts, output_label=None):
+    candidate_names = []
+
+    if candidate_fact in raw_df.index:
+        candidate_names.append(candidate_fact)
+
+    label_candidates = [candidate_fact]
+    if output_label is not None:
+        label_candidates.append(output_label)
+        label_candidates.extend(STATEMENT_LABEL_ALIASES.get(output_label, []))
+
+    for label_candidate in label_candidates:
+        normalized_candidate = _normalize_fact_label(label_candidate)
+        for fact_name in label_to_facts.get(normalized_candidate, []):
+            if fact_name in raw_df.index and fact_name not in candidate_names:
+                candidate_names.append(fact_name)
+
+    return candidate_names
+
+
+def _build_statement_from_fact_map(raw_df, fact_map, label_dict=None):
+    statement_rows = {}
+    label_to_facts = _build_label_to_facts_map(label_dict or {})
+
+    for output_label, candidate_facts in fact_map.items():
+        merged_row = None
+
+        for fact_name in candidate_facts:
+            resolved_fact_names = _candidate_fact_names(
+                raw_df=raw_df,
+                candidate_fact=fact_name,
+                label_to_facts=label_to_facts,
+                output_label=output_label,
+            )
+
+            if not resolved_fact_names:
+                continue
+
+            for resolved_fact_name in resolved_fact_names:
+                row = raw_df.loc[resolved_fact_name]
+                if isinstance(row, pd.DataFrame):
+                    row = row.iloc[0]
+
+                if row.dropna().empty:
+                    continue
+
+                if merged_row is None:
+                    merged_row = row.copy()
+                else:
+                    merged_row = merged_row.combine_first(row)
+
+        if merged_row is not None and not merged_row.dropna().empty:
+            statement_rows[output_label] = merged_row
+
+    if not statement_rows:
+        return pd.DataFrame(columns=raw_df.columns)
+
+    statement_df = pd.DataFrame(statement_rows).T
+    statement_df = statement_df.dropna(axis=0, how="all")
+    statement_df = statement_df.dropna(axis=1, how="all")
+    return statement_df
+
+
+def _fill_row_from_formula(df, target_row, left_row, right_row, operation="subtract"):
+    if left_row not in df.index or right_row not in df.index:
+        return df
+
+    derived_series = None
+    if operation == "subtract":
+        derived_series = df.loc[left_row] - df.loc[right_row]
+    elif operation == "add":
+        derived_series = df.loc[left_row] + df.loc[right_row]
+    else:
+        raise ValueError("Unsupported operation")
+
+    if target_row not in df.index:
+        df.loc[target_row] = derived_series
+        return df
+
+    df.loc[target_row] = df.loc[target_row].combine_first(derived_series)
+    return df
+
+
+def _postprocess_income_statement(statement_df):
+    df = statement_df.copy()
+
+    df = _fill_row_from_formula(
+        df,
+        target_row="Operating Expenses",
+        left_row="Gross Profit",
+        right_row="Operating Income",
+        operation="subtract",
+    )
+    df = _fill_row_from_formula(
+        df,
+        target_row="Income before income tax",
+        left_row="Net Income",
+        right_row="Income tax expense",
+        operation="add",
+    )
+
+    return df
+
+
+def _postprocess_balance_sheet(statement_df):
+    df = statement_df.copy()
+
+    if "Short-term Debt" in df.index and "Short-term debt" not in df.index:
+        df.loc["Short-term debt"] = df.loc["Short-term Debt"]
+
+    if (
+        "Long-term Liabilities - Current Portion" in df.index
+        and "Long-term liabilities - current portion" not in df.index
+    ):
+        df.loc["Long-term liabilities - current portion"] = df.loc[
+            "Long-term Liabilities - Current Portion"
+        ]
+
+    if "Long-term Debt, Noncurrent" in df.index and "Long-term debt" not in df.index:
+        df.loc["Long-term debt"] = df.loc["Long-term Debt, Noncurrent"]
+
+    if "Long-term Bank Loans" in df.index and "Long-term bank loans" not in df.index:
+        df.loc["Long-term bank loans"] = df.loc["Long-term Bank Loans"]
+
+    if "Lease Liabilities, Current" in df.index and "Lease liabilities, current" not in df.index:
+        df.loc["Lease liabilities, current"] = df.loc["Lease Liabilities, Current"]
+
+    if (
+        "Lease Liabilities, Noncurrent" in df.index
+        and "Lease liabilities, noncurrent" not in df.index
+    ):
+        df.loc["Lease liabilities, noncurrent"] = df.loc[
+            "Lease Liabilities, Noncurrent"
+        ]
+
+    if "Operating Lease Liability, Current" in df.index and "Operating lease liability, current" not in df.index:
+        df.loc["Operating lease liability, current"] = df.loc[
+            "Operating Lease Liability, Current"
+        ]
+
+    if (
+        "Operating Lease Liability, Noncurrent" in df.index
+        and "Operating lease liability, noncurrent" not in df.index
+    ):
+        df.loc["Operating lease liability, noncurrent"] = df.loc[
+            "Operating Lease Liability, Noncurrent"
+        ]
+
+    if "Finance Lease Liability, Current" in df.index and "Finance lease liability, current" not in df.index:
+        df.loc["Finance lease liability, current"] = df.loc[
+            "Finance Lease Liability, Current"
+        ]
+
+    if (
+        "Finance Lease Liability, Noncurrent" in df.index
+        and "Finance lease liability, noncurrent" not in df.index
+    ):
+        df.loc["Finance lease liability, noncurrent"] = df.loc[
+            "Finance Lease Liability, Noncurrent"
+        ]
+
+    return df
+
+
+def _build_standardized_financial_statements(raw_df, label_dict=None):
+    income_statement_df = _build_statement_from_fact_map(
+        raw_df, INCOME_STATEMENT_FACT_MAP, label_dict=label_dict
+    )
+    income_statement_df = _postprocess_income_statement(income_statement_df)
+    balance_sheet_df = _build_statement_from_fact_map(
+        raw_df, BALANCE_SHEET_FACT_MAP, label_dict=label_dict
+    )
+    balance_sheet_df = _postprocess_balance_sheet(balance_sheet_df)
+    cash_flow_df = _build_statement_from_fact_map(
+        raw_df, CASH_FLOW_FACT_MAP, label_dict=label_dict
+    )
+
+    return income_statement_df, balance_sheet_df, cash_flow_df
+
+
+def _facts_to_labeled_pivot(raw_df, label_dict):
+    pivot = raw_df.T
+    pivot.rename(columns=label_dict, inplace=True)
     return pivot.T
+
+
+def _balance_sheet_from_raw_df(raw_df, label_dict=None):
+    statement_df = _build_statement_from_fact_map(
+        raw_df, BALANCE_SHEET_FACT_MAP, label_dict=label_dict
+    )
+    return _postprocess_balance_sheet(statement_df)
+
+
+def _income_statement_from_raw_df(raw_df, label_dict=None):
+    statement_df = _build_statement_from_fact_map(
+        raw_df, INCOME_STATEMENT_FACT_MAP, label_dict=label_dict
+    )
+    return _postprocess_income_statement(statement_df)
+
+
+def _cash_flow_from_raw_df(raw_df, label_dict=None):
+    return _build_statement_from_fact_map(
+        raw_df, CASH_FLOW_FACT_MAP, label_dict=label_dict
+    )
+
+
+def annual_balance_sheet_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _annual_facts_raw(ticker, headers)
+    return _balance_sheet_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def annual_income_statement_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _annual_facts_raw(ticker, headers)
+    return _income_statement_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def annual_cash_flow_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _annual_facts_raw(ticker, headers)
+    return _cash_flow_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def annual_facts_standardized_separated(ticker, headers=header):
+    raw_df, label_dict = _annual_facts_raw(ticker, headers)
+    return _build_standardized_financial_statements(raw_df, label_dict=label_dict)
+
+
+def quarterly_balance_sheet_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _quarterly_facts_raw(ticker, headers)
+    return _balance_sheet_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def quarterly_income_statement_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _quarterly_facts_raw(ticker, headers)
+    return _income_statement_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def quarterly_cash_flow_from_companyfacts(ticker, headers=header):
+    raw_df, label_dict = _quarterly_facts_raw(ticker, headers)
+    return _cash_flow_from_raw_df(raw_df, label_dict=label_dict)
+
+
+def quarterly_facts_standardized_separated(ticker, headers=header):
+    raw_df, label_dict = _quarterly_facts_raw(ticker, headers)
+    return _build_standardized_financial_statements(raw_df, label_dict=label_dict)
+
+
+def _find_candidate_rows_for_missing_columns(raw_df, statement_row, current_facts):
+    missing_columns = statement_row[statement_row.isna()].index
+    if len(missing_columns) == 0:
+        return []
+
+    candidates = []
+
+    for fact_name in raw_df.index:
+        if fact_name in current_facts:
+            continue
+
+        row = raw_df.loc[fact_name]
+        if isinstance(row, pd.DataFrame):
+            row = row.iloc[0]
+
+        available_count = row.loc[missing_columns].notna().sum()
+        if available_count == 0:
+            continue
+
+        candidates.append((fact_name, int(available_count)))
+
+    candidates.sort(key=lambda item: item[1], reverse=True)
+    return candidates
+
+
+def diagnose_missing_companyfacts_rows(ticker, fact_map, headers=header, top_n=10):
+    raw_df, _ = _annual_facts_raw(ticker, headers)
+    statement_df = _build_statement_from_fact_map(raw_df, fact_map)
+    diagnostics = {}
+
+    for output_label, candidate_facts in fact_map.items():
+        if output_label not in statement_df.index:
+            continue
+
+        statement_row = statement_df.loc[output_label]
+        if statement_row.notna().all():
+            continue
+
+        diagnostics[output_label] = {
+            "missing_columns": list(statement_row[statement_row.isna()].index),
+            "mapped_facts": candidate_facts,
+            "candidate_rows": _find_candidate_rows_for_missing_columns(
+                raw_df=raw_df,
+                statement_row=statement_row,
+                current_facts=candidate_facts,
+            )[:top_n],
+        }
+
+    return diagnostics
+
+
+def diagnose_missing_balance_sheet_rows(ticker, headers=header, top_n=10):
+    return diagnose_missing_companyfacts_rows(
+        ticker=ticker,
+        fact_map=BALANCE_SHEET_FACT_MAP,
+        headers=headers,
+        top_n=top_n,
+    )
+
+
+def diagnose_missing_income_statement_rows(ticker, headers=header, top_n=10):
+    return diagnose_missing_companyfacts_rows(
+        ticker=ticker,
+        fact_map=INCOME_STATEMENT_FACT_MAP,
+        headers=headers,
+        top_n=top_n,
+    )
+
+
+def diagnose_missing_cash_flow_rows(ticker, headers=header, top_n=10):
+    return diagnose_missing_companyfacts_rows(
+        ticker=ticker,
+        fact_map=CASH_FLOW_FACT_MAP,
+        headers=headers,
+        top_n=top_n,
+    )
 
 
 def quarterly_facts(ticker, headers=header):
-    accession_nums = get_filtered_filings(
-        ticker, ten_k=False, just_accession_numbers=True
-    )
-    df, label_dict = facts_DF(ticker, headers)
-    ten_q = df[df["accn"].isin(accession_nums)]
-    ten_q = ten_q[ten_q.index.isin(accession_nums.index)].reset_index(drop=False)
-    ten_q = ten_q.drop_duplicates(subset=["fact", "end"], keep="last")
-    pivot = ten_q.pivot_table(values="val", columns="fact", index="end")
-    pivot.rename(columns=label_dict, inplace=True)
-
-    return pivot.T
+    raw_df, label_dict = _quarterly_facts_raw(ticker, headers)
+    return _facts_to_labeled_pivot(raw_df, label_dict)
 
 
 def save_dataframe_to_csv(dataframe, folder_name, ticker, statement_name, frequency):
@@ -315,9 +1448,11 @@ def _is_statement_file(short_name_tag, long_name_tag, file_name):
     return (
         short_name_tag is not None
         and long_name_tag is not None
-        and file_name  # Check if file_name is not an empty string
-        and "Statement" in long_name_tag.text
-        or "Disclosure" in long_name_tag.text
+        and file_name
+        and (
+            "Statement" in long_name_tag.text
+            or "Disclosure" in long_name_tag.text
+        )
     )
 
 
@@ -589,8 +1724,8 @@ def process_one_statement(ticker, accession_number, statement_name):
 
 def get_label_dictionary(ticker, headers):
     facts = get_facts(ticker, headers)
-    us_gaap_data = facts["facts"]["us-gaap"]
-    labels_dict = {fact: details["label"] for fact, details in us_gaap_data.items()}
+    accounting_data, _ = _get_accounting_facts_block(facts)
+    labels_dict = {fact: details["label"] for fact, details in accounting_data.items()}
     # Alguns itens tem a sua 'label' igual a None. Se for None, ele será substituido pela respectiva chave
     labels_dict = {key: (value if value is not None else key) for key, value in labels_dict.items()}
     return labels_dict
