@@ -5516,3 +5516,130 @@ def indicador_fcff_trimestral(
     )).select('dt_refer', 'fcff')
 
     return df_fcff
+
+
+def verificar_codigos_dfc_anual(
+    df_dfc: pl.DataFrame,
+    cod_empresa: int,
+    codigos: list[str],
+    ano: int,
+) -> None:
+    """
+    Mostra o nome dos itens do dcf baseados nos códigos da lista.
+
+    Parameters
+    ----------
+    df_dfc : pl.DataFrame
+        DataFrame do demonstrativo de fluxo de caixa.
+    cod_empresa : int
+        Código da empresa na B3.
+    codigos : list[str]
+        Lista de códigos contabeis (`cd_conta`) que serão consultados.
+    ano : int
+        Ano de referência do DFC anual.
+
+    Returns
+    -------
+    None
+        A funcao imprime no console a descricao (`ds_conta`) e o valor
+        (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
+    """
+    dt_refer = datetime(ano, 12, 31)
+    dt_refer_label = dt_refer.strftime("%Y-%m-%d")
+
+    df_ano = (
+        df_dfc
+        .filter(
+            (pl.col("cd_cvm") == cod_empresa)
+            & (pl.col("dt_refer") == dt_refer)
+            & (pl.col("ordem_exerc").str.contains("LTIMO"))
+            & (~pl.col("ordem_exerc").str.contains("PEN"))
+        )
+        .sort("cd_conta")
+    )
+    if df_ano.is_empty():
+        print(f"Nenhum DFC encontrado para empresa em {dt_refer_label}.")
+        return
+
+    itens_encontrados = (
+        df_ano
+        .filter(pl.col("cd_conta").is_in(codigos))
+        .select("cd_conta", "ds_conta", "vl_conta")
+    )
+
+    codigos_encontrados = set(itens_encontrados.get_column("cd_conta").to_list())
+    codigos_ausentes = [codigo for codigo in codigos if codigo not in codigos_encontrados]
+
+    print(f"\nItens do DFC - {dt_refer_label}")
+    for codigo, descricao, valor in itens_encontrados.iter_rows():
+        print(f"{codigo}: {descricao} | vl_conta={valor}")
+
+    if codigos_ausentes:
+        print("\nCodigos nao encontrados:")
+        for codigo in codigos_ausentes:
+            print(codigo)
+
+
+def verificar_codigos_dfc_trimestral(
+    df_dfc: pl.DataFrame,
+    cod_empresa: int,
+    codigos: list[str],
+    ano: int,
+    mes: int,
+) -> None:
+    """
+    Mostra a descricao dos itens da DFC trimestral para uma lista de codigos.
+
+    Parameters
+    ----------
+    df_dfc : pl.DataFrame
+        DataFrame do demonstrativo de fluxo de caixa.
+    cod_empresa : int
+        Código da empresa na B3.
+    codigos : list[str]
+        Lista de codigos contabeis (`cd_conta`) que serão consultados.
+    ano : int
+        Ano de referência do DFC trimestral.
+    mes : int
+        Mês de referência do trimestre. Use 3, 6 ou 9.
+
+    Returns
+    -------
+    None
+        A funcao imprime no console a descricao (`ds_conta`) e o valor
+        (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
+    """
+    dt_refer = datetime(ano, mes, 30 if mes in {6, 9} else 31)
+    dt_refer_label = dt_refer.strftime("%Y-%m-%d")
+
+    df_trimestre = (
+        df_dfc
+        .filter(
+            (pl.col("cd_cvm") == cod_empresa)
+            & (pl.col("dt_refer") == dt_refer)
+            & (pl.col("ordem_exerc").str.contains("LTIMO"))
+            & (~pl.col("ordem_exerc").str.contains("PEN"))
+        )
+        .sort("cd_conta")
+    )
+    if df_trimestre.is_empty():
+        print(f"Nenhum DFC trimestral encontrado em {dt_refer_label}.")
+        return
+
+    itens_encontrados = (
+        df_trimestre
+        .filter(pl.col("cd_conta").is_in(codigos))
+        .select("cd_conta", "ds_conta", "vl_conta")
+    )
+
+    codigos_encontrados = set(itens_encontrados.get_column("cd_conta").to_list())
+    codigos_ausentes = [codigo for codigo in codigos if codigo not in codigos_encontrados]
+
+    print(f"\nItens do DFC trimestral - {dt_refer_label}")
+    for codigo, descricao, valor in itens_encontrados.iter_rows():
+        print(f"{codigo}: {descricao} | vl_conta={valor}")
+
+    if codigos_ausentes:
+        print("\nCodigos nao encontrados:")
+        for codigo in codigos_ausentes:
+            print(codigo)
