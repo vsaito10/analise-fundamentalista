@@ -1029,8 +1029,8 @@ def indicador_p_lpa(ten_k: bool, price: pd.Series, lpa: pd.Series, idx: list) ->
     lpa_adjusted = lpa.copy()
     lpa_adjusted[lpa_adjusted <= 0] = np.nan  
 
-    # Calculando o P/L
-    indicador_p_lpa = (price / lpa_adjusted).round(2)
+    # Calculando o P/L (.values evita alinhamento por índice entre price e lpa)
+    indicador_p_lpa = (price.values / lpa_adjusted.values).round(2)
 
     if ten_k:
         p_lpa = pd.Series(indicador_p_lpa, index=idx).fillna(0)
@@ -1099,8 +1099,8 @@ def indicador_lpa_p(ten_k: bool, price: pd.Series, lpa: pd.Series, idx: list) ->
     price = pd.to_numeric(price, errors='coerce')
     lpa = pd.to_numeric(lpa, errors='coerce')
 
-    # Calculando o L/P (Earnings Yield)
-    indicador_lpa_p = ((lpa / price) * 100).round(2)
+    # Calculando o L/P (Earnings Yield) (.values evita alinhamento por índice entre lpa e price)
+    indicador_lpa_p = ((lpa.values / price.values) * 100).round(2)
 
     if ten_k:
         # Transformando o indicador em uma serie pandas
@@ -1443,8 +1443,8 @@ def indicador_p_vpa(ten_k: bool, price: pd.Series, vpa: pd.Series, idx: list) ->
     vpa_adjusted = vpa.copy()
     vpa_adjusted[vpa_adjusted <= 0] = np.nan
 
-    # Calculando o P/VPA
-    indicador_p_vpa = (price / vpa_adjusted).round(2)
+    # Calculando o P/VPA (.values evita alinhamento por índice entre price e vpa)
+    indicador_p_vpa = (price.values / vpa_adjusted.values).round(2)
 
     if ten_k:
         p_vpa = pd.Series(indicador_p_vpa, index=idx).fillna(0) 
