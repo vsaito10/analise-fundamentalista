@@ -2392,6 +2392,46 @@ def indicador_ebitda(df_dre: pl.DataFrame, df_dfc: pl.DataFrame, cod_cvm: int, c
     return df_ebitda
 
 
+def indicador_ebitda_2(df_dre: pl.DataFrame, cod_cvm: int, cod_ebit: str, df_depreciacao: pl.DataFrame) -> pl.DataFrame:
+    """
+    Calcula o ebitda da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ebit: str
+        Código do ebit na dre.
+    df_depreciacao: pl.DataFrame
+        DataFrame da depreciação e amortização.
+
+    Returns
+    -------
+    df_ebitda: pl.DataFrame
+        DataFrame do ebitda da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o ebit
+    ebit = dre_empresa.filter(pl.col('cd_conta') == cod_ebit).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    ebit = ebit.rename({'vl_conta': 'ebit'})
+
+    # Juntando os dfs
+    df_ebitda = ebit.join(df_depreciacao, on='dt_refer', how='inner')
+
+    # Calculando o ebitda
+    df_ebitda = df_ebitda.with_columns(
+        (pl.col('ebit') + pl.col('depreciacao')).alias('ebitda')
+    ).select('dt_refer', 'ebitda')
+
+    return df_ebitda
+
+
 def indicador_ebitda_trimestral(df_dre: pl.DataFrame, df_dfc: pl.DataFrame, cod_cvm: int, cod_ebit: str, cod_depreciacao: str) -> pl.DataFrame:
     """
     Calcula o ebitda da empresa.
@@ -2458,6 +2498,65 @@ def indicador_ebitda_trimestral(df_dre: pl.DataFrame, df_dfc: pl.DataFrame, cod_
 
     # Juntando os dfs
     df_ebitda_trimestral = ebit.join(depreciacao_nao_acum, on='dt_refer', how='inner')
+
+    # Calculando o ebitda trimestral
+    df_ebitda_trimestral = df_ebitda_trimestral.with_columns(
+        (pl.col('ebit') + pl.col('depreciacao_nao_acum')).alias('ebitda')
+    )
+
+    # Calculando o ebitda trimestral acumulado
+    df_ebitda_trimestral_acumulada = df_ebitda_trimestral.with_columns(
+        pl.col('ebitda')
+        .rolling_sum(window_size=4, min_samples=4) 
+        .round(2)                                   
+        .alias('ebitda_acum')
+    )
+
+    # Selecionando as principais colunas
+    df_ebitda_trimestral = df_ebitda_trimestral.select('dt_refer', 'ebitda')
+    df_ebitda_trimestral_acumulada = df_ebitda_trimestral_acumulada.select('dt_refer', 'ebitda_acum').rename({'ebitda_acum': 'ebitda'})
+
+    return df_ebitda_trimestral, df_ebitda_trimestral_acumulada
+
+
+def indicador_ebitda_trimestral_2(df_dre: pl.DataFrame, cod_cvm: int, cod_ebit: str, df_depreciacao_nao_acum: pl.DataFrame) -> pl.DataFrame:
+    """
+    Calcula o ebitda da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ebit: str
+        Código do ebit na dre.
+    df_depreciacao_nao_acum: pl.DataFrame
+        DataFrame da depreciação e amortização não acumulado.
+
+    Returns
+    -------
+    df_ebitda_trimestral: pl.DataFrame
+        DataFrame do ebitda trimestral da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o ebit
+    ebit = dre_empresa.filter(pl.col('cd_conta') == cod_ebit).select('dt_refer', 'dt_ini_exerc', 'vl_conta')
+
+    # Existem linhas duplicadas na coluna 'dt_refer', removendo as linhas duplicadas, mantendo pela data mais recente da 'dt_ini_exerc'
+    ebit = (ebit
+        .sort(['dt_refer', 'dt_ini_exerc'], descending=[False, True])
+        .unique(subset='dt_refer', keep='first')
+        .sort('dt_refer')
+    ).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    ebit = ebit.rename({'vl_conta': 'ebit'})
+
+    # Juntando os dfs
+    df_ebitda_trimestral = ebit.join(df_depreciacao_nao_acum, on='dt_refer', how='inner')
 
     # Calculando o ebitda trimestral
     df_ebitda_trimestral = df_ebitda_trimestral.with_columns(
@@ -4176,6 +4275,33 @@ def indicador_net_capex(df_dfc: pl.DataFrame, cod_cvm: int, cod_depreciacao: str
     return df_net_capex
 
 
+def indicador_net_capex_2(df_depreciacao: pl.DataFrame, df_capex: pl.DataFrame) -> pl.DataFrame:
+    """
+    Calcula o net capex da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_depreciacao: pl.DataFrame
+        DataFrame da depreciação e amortização.
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+
+    Returns
+    -------
+    df_net_capex: pl.DataFrame
+        DataFrame do net capex da empresa.
+    """
+    # Juntando os dfs
+    df_net_capex = df_capex.join(df_depreciacao, on='dt_refer', how='inner')
+
+    # Calculando o net capex
+    df_net_capex = df_net_capex.with_columns(
+        (pl.col('capex') - pl.col('depreciacao')).alias('net_capex')
+    ).select('dt_refer', 'net_capex')
+
+    return df_net_capex
+
+
 def indicador_net_capex_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_depreciacao: str, df_capex: pl.DataFrame) -> pl.DataFrame:
     """
     Calcula o net capex trimestral da empresa.
@@ -4238,6 +4364,33 @@ def indicador_net_capex_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_depre
     # Calculando o net capex
     df_net_capex = df_net_capex.with_columns(
         (pl.col('capex') - pl.col('depreciacao_acum')).alias('net_capex')
+    ).select('dt_refer', 'net_capex')
+
+    return df_net_capex
+
+
+def indicador_net_capex_trimestral_2(df_capex: pl.DataFrame, df_depreciacao_acum: pl.DataFrame) -> pl.DataFrame:
+    """
+    Calcula o net capex trimestral da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+    df_depreciacao_acum: pl.DataFrame
+        DataFrame da depreciação e amortização acumulado.
+
+    Returns
+    -------
+    df_net_capex: pl.DataFrame
+        DataFrame do net capex trimestral da empresa.
+    """
+    # Juntando os dfs
+    df_net_capex = df_capex.join(df_depreciacao_acum, on='dt_refer', how='inner')
+
+    # Calculando o net capex
+    df_net_capex = df_net_capex.with_columns(
+        (pl.col('capex') - pl.col('depreciacao')).alias('net_capex')
     ).select('dt_refer', 'net_capex')
 
     return df_net_capex
@@ -5187,6 +5340,78 @@ def indicador_fcfe(
     return df_fcfe
 
 
+def indicador_fcfe_2(
+    df_dre: pl.DataFrame, 
+    cod_cvm: int, 
+    cod_ll: str, 
+    df_depreciacao: pl.DataFrame,
+    df_capex: pl.DataFrame,
+    df_change_in_non_cash_wc: pl.DataFrame,
+    df_new_borrowing: pl.DataFrame,
+    df_debt_paid: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    Calcula o FCFE da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ll: str
+        Código do lucro líquido na dre.
+    df_depreciacao: pl.DataFrame
+        DataFrame da depreciação e amortização.
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+    df_change_in_non_cash_wc: pl.DataFrame
+        DataFrame das variações nos ativos e passivos do fluxo de caixa da empresa.
+    df_new_borrowing: pl.DataFrame
+        DataFrame dos empréstimos captados pela empresa.
+    df_debt_paid: pl.DataFrame
+        DataFrame dos empréstimos pagos pela empresa.
+
+    Returns
+    -------
+    df_fcfe: pl.DataFrame
+        DataFrame do FCFE da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o lucro líquido
+    lucro_liquido = dre_empresa.filter(pl.col('cd_conta') == cod_ll).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    lucro_liquido = lucro_liquido.rename({'vl_conta': 'lucro_liquido'})
+
+    # Lista dos dfs para juntar em apenas um df
+    lst_df = [
+        lucro_liquido, 
+        df_depreciacao, 
+        df_capex, 
+        df_change_in_non_cash_wc, 
+        df_new_borrowing, 
+        df_debt_paid
+    ]
+
+    # Juntando os dfs
+    df_fcfe = reduce(
+        lambda left, right: left.join(right, on='dt_refer', how='inner'), lst_df
+    )
+
+    # Calculando o FCFE
+    df_fcfe = df_fcfe.with_columns((
+        (
+            pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
+        )
+        .alias('fcfe')
+    )).select('dt_refer', 'fcfe')
+
+    return df_fcfe
+
+
 def indicador_fcfe_trimestral(
     df_dre: pl.DataFrame, 
     df_dfc: pl.DataFrame,
@@ -5314,6 +5539,94 @@ def indicador_fcfe_trimestral(
     return df_fcfe
 
 
+def indicador_fcfe_trimestral_2(
+    df_dre: pl.DataFrame, 
+    cod_cvm: int, 
+    cod_ll: str, 
+    df_depreciacao_acum: pl.DataFrame,
+    df_capex: pl.DataFrame,
+    df_change_in_non_cash_wc: pl.DataFrame,
+    df_new_borrowing: pl.DataFrame,
+    df_debt_paid: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    Calcula o FCFE da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ll: str
+        Código do lucro líquido na dre.
+    df_depreciacao_acum: pl.DataFrame
+        DataFrame da depreciação e amortização acumulado.
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+    df_change_in_non_cash_wc: pl.DataFrame
+        DataFrame das variações nos ativos e passivos do fluxo de caixa da empresa.
+    df_new_borrowing: pl.DataFrame
+        DataFrame dos empréstimos captados pela empresa.
+    df_debt_paid: pl.DataFrame
+        DataFrame dos empréstimos pagos pela empresa.
+
+    Returns
+    -------
+    df_fcfe: pl.DataFrame
+        DataFrame do FCFE da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o lucro líquido
+    lucro_liquido = dre_empresa.filter(pl.col('cd_conta') == cod_ll).select('dt_refer', 'dt_ini_exerc', 'vl_conta')
+
+    # Existem linhas duplicadas na coluna 'dt_refer', removendo as linhas duplicadas, mantendo pela data mais recente da 'dt_ini_exerc'
+    lucro_liquido = (lucro_liquido
+        .sort(['dt_refer', 'dt_ini_exerc'], descending=[False, True])
+        .unique(subset='dt_refer', keep='first')
+        .sort('dt_refer')
+    ).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    lucro_liquido = lucro_liquido.rename({'vl_conta': 'lucro_liquido'})
+
+    # Calculando o lucro líquido trimestral acumulado
+    expr_lucro_liquido_acum = (
+        pl.col('lucro_liquido')
+        .rolling_sum(window_size=4, min_samples=4) 
+        .round(2)                                   
+    )
+
+    df_lucro_liquido_acum = lucro_liquido.with_columns([expr_lucro_liquido_acum]).select('dt_refer', 'lucro_liquido').fill_null(0)
+
+    # Lista dos dfs para juntar em apenas um df
+    lst_df = [
+        df_lucro_liquido_acum, 
+        df_depreciacao_acum, 
+        df_capex, 
+        df_change_in_non_cash_wc, 
+        df_new_borrowing, 
+        df_debt_paid
+    ]
+
+    # Juntando os dfs
+    df_fcfe = reduce(
+        lambda left, right: left.join(right, on='dt_refer', how='inner'), lst_df
+    )
+
+    # Calculando o FCFE
+    df_fcfe = df_fcfe.with_columns((
+        (
+            pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
+        )
+        .alias('fcfe')
+    )).select('dt_refer', 'fcfe')
+
+    return df_fcfe
+
+
 def indicador_fcff(
     df_dre: pl.DataFrame, 
     df_dfc: pl.DataFrame,
@@ -5394,6 +5707,74 @@ def indicador_fcff(
     return df_fcff
 
 
+def indicador_fcff_2(
+    df_dre: pl.DataFrame, 
+    cod_cvm: int, 
+    cod_ebit: str, 
+    df_depreciacao: pl.DataFrame, 
+    df_taxes_on_operating_income: pl.DataFrame,
+    df_capex: pl.DataFrame,
+    df_change_in_non_cash_wc: pl.DataFrame
+) -> pl.DataFrame:
+    """
+    Calcula o FCFF da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ebit: str
+        Código do ebit na dre.
+    df_depreciacao: pl.DataFrame
+        DataFrame da depreciação e amortização.
+    df_taxes_on_operating_income: pl.DataFrame
+        DataFrame do imposto sobre a receita operacional (ebit).
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+    df_change_in_non_cash_wc: pl.DataFrame
+        DataFrame das variações nos ativos e passivos do fluxo de caixa da empresa.
+
+    Returns
+    -------
+    df_fcff: pl.DataFrame
+        DataFrame do FCFF da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o ebit
+    ebit = dre_empresa.filter(pl.col('cd_conta') == cod_ebit).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    ebit = ebit.rename({'vl_conta': 'ebit'})
+
+    # Lista dos dfs para juntar em apenas um df
+    lst_df = [
+        ebit, 
+        df_taxes_on_operating_income, 
+        df_depreciacao, 
+        df_capex, 
+        df_change_in_non_cash_wc, 
+    ]
+
+    # Juntando os dfs
+    df_fcff = reduce(
+        lambda left, right: left.join(right, on='dt_refer', how='inner'), lst_df
+    )
+
+    # Calculando o FCFE
+    df_fcff = df_fcff.with_columns((
+        (
+            pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
+        )
+        .alias('fcff')
+    )).select('dt_refer', 'fcff')
+
+    return df_fcff
+
+
 def indicador_fcff_trimestral(
     df_dre: pl.DataFrame, 
     df_dfc: pl.DataFrame,
@@ -5447,7 +5828,6 @@ def indicador_fcff_trimestral(
     # Renomeando a coluna
     ebit = ebit.rename({'vl_conta': 'ebit'})
 
-
     # Calculando o ebit trimestral acumulado
     expr_ebit_acum = (
         pl.col('ebit')
@@ -5492,6 +5872,90 @@ def indicador_fcff_trimestral(
     )
 
     df_depreciacao_acum = depreciacao_nao_acum.with_columns([expr_depreciacao_acum]).select('dt_refer', 'depreciacao').fill_null(0)
+
+    # Lista dos dfs para juntar em apenas um df
+    lst_df = [
+        df_ebit_acum, 
+        df_taxes_on_operating_income, 
+        df_depreciacao_acum, 
+        df_capex, 
+        df_change_in_non_cash_wc, 
+    ]
+
+    # Juntando os dfs
+    df_fcff = reduce(
+        lambda left, right: left.join(right, on='dt_refer', how='inner'), lst_df
+    )
+
+    # Calculando o FCFE
+    df_fcff = df_fcff.with_columns((
+        (
+            pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
+        )
+        .alias('fcff')
+    )).select('dt_refer', 'fcff')
+
+    return df_fcff
+
+
+def indicador_fcff_trimestral_2(
+    df_dre: pl.DataFrame, 
+    cod_cvm: int, 
+    cod_ebit: str, 
+    df_taxes_on_operating_income: pl.DataFrame,
+    df_depreciacao_acum: pl.DataFrame, 
+    df_capex: pl.DataFrame,
+    df_change_in_non_cash_wc: pl.DataFrame
+) -> pl.DataFrame:
+    """
+    Calcula o FCFF da empresa, quando o item "depreciação e amortização" não é fixo no dfc.
+
+    Parameters
+    ----------
+    df_dre: pl.DataFrame
+        DataFrame da demonstração do resultado do exercício.
+    cod_cvm: int
+        Código da empresa na B3.
+    cod_ebit: str
+        Código do ebit na dre.
+    df_taxes_on_operating_income: pl.DataFrame
+        DataFrame do imposto sobre a receita operacional (ebit).
+    df_depreciacao_acum: pl.DataFrame
+        DataFrame da depreciação e amortização acumulado.
+    df_capex: pl.DataFrame
+        DataFrame do capex da empresa.
+    df_change_in_non_cash_wc: pl.DataFrame
+        DataFrame das variações nos ativos e passivos do fluxo de caixa da empresa.
+
+    Returns
+    -------
+    df_fcff: pl.DataFrame
+        DataFrame do FCFF da empresa.
+    """
+    # Selecionando a dre
+    dre_empresa = df_dre.filter(pl.col('cd_cvm') == cod_cvm)
+
+    # Selecionando o ebit
+    ebit = dre_empresa.filter(pl.col('cd_conta') == cod_ebit).select('dt_refer', 'dt_ini_exerc', 'vl_conta')
+
+    # Existem linhas duplicadas na coluna 'dt_refer', removendo as linhas duplicadas, mantendo pela data mais recente da 'dt_ini_exerc'
+    ebit = (ebit
+        .sort(['dt_refer', 'dt_ini_exerc'], descending=[False, True])
+        .unique(subset='dt_refer', keep='first')
+        .sort('dt_refer')
+    ).select('dt_refer', 'vl_conta')
+
+    # Renomeando a coluna
+    ebit = ebit.rename({'vl_conta': 'ebit'})
+
+    # Calculando o ebit trimestral acumulado
+    expr_ebit_acum = (
+        pl.col('ebit')
+        .rolling_sum(window_size=4, min_samples=4) 
+        .round(2)                                   
+    )
+
+    df_ebit_acum = ebit.with_columns([expr_ebit_acum]).select('dt_refer', 'ebit').fill_null(0)
 
     # Lista dos dfs para juntar em apenas um df
     lst_df = [
