@@ -242,7 +242,8 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'TXRX4'),
 
     #GAS
-    (df['TICKER'] == 'CEGR3') | (df['TICKER'] == 'CGAS3') | (df['TICKER'] == 'CGAS5'),
+    (df['TICKER'] == 'CEGR3') | (df['TICKER'] == 'CGAS3') | (df['TICKER'] == 'CGAS5') |
+    (df['TICKER'] == 'PASS3'),
 
     #GESTAO DE RECURSOS E INVESTIMENTOS
     (df['TICKER'] == 'G2DI33') | (df['TICKER'] == 'GPIV33') | (df['TICKER'] == 'PPLA11'),
@@ -329,7 +330,7 @@ def filtro_planilha_statusinvest(path: str)-> pd.DataFrame:
     (df['TICKER'] == 'AALR3') | (df['TICKER'] == 'DASA3') | (df['TICKER'] == 'FLRY3') |
     (df['TICKER'] == 'HAPV3') | (df['TICKER'] == 'KRSA3') | (df['TICKER'] == 'MATD3') | 
     (df['TICKER'] == 'ODPV3') | (df['TICKER'] == 'ONCO3') | (df['TICKER'] == 'PARD3') | 
-    (df['TICKER'] == 'QUAL3') | (df['TICKER'] == 'RDOR3'),
+    (df['TICKER'] == 'QUAL3') | (df['TICKER'] == 'RDOR3') | (df['TICKER'] == 'SAUD3'),
 
     #SEGUROS
     (df['TICKER'] == 'APER3') | (df['TICKER'] == 'BBSE3') | (df['TICKER'] == 'BRGE11')|
