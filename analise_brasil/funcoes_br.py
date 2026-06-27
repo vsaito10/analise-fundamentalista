@@ -1936,7 +1936,8 @@ def ativo_fechamento_trimestral_csv(
         if ano_lancamento_mais_recente == ano_atual_int:
 
             # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
-            ultimo_fechamento_filt_atual = ultimo_fechamento_mes.loc[str(ano_atual_int)]
+            # Usa a série completa (sem o corte por ano), pois 'ultimo_fechamento_mes' já exclui o ano atual
+            ultimo_fechamento_filt_atual = fechamento_trimestral_filt.loc[str(ano_atual_int)]
 
             # Último mês do trimestre mais recente da série 'pl_series_dt_refer'
             ultimo_mes_refer = pl_series_dt_refer[-1].month 
@@ -2018,8 +2019,9 @@ def ativo_fechamento_trimestral_csv(
         if ano_lancamento_mais_recente == ano_atual_int:
 
             # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
-            ultimo_fechamento_filt_atual_on = ultimo_fechamento_mes_on.loc[str(ano_atual_int)]
-            ultimo_fechamento_filt_atual_pn = ultimo_fechamento_mes_pn.loc[str(ano_atual_int)]
+            # Usa a série completa (sem o corte por ano), pois 'ultimo_fechamento_mes_*' já exclui o ano atual
+            ultimo_fechamento_filt_atual_on = fechamento_trimestral_filt_on.loc[str(ano_atual_int)]
+            ultimo_fechamento_filt_atual_pn = fechamento_trimestral_filt_pn.loc[str(ano_atual_int)]
 
             # Último mês do trimestre mais recente da série 'pl_series_dt_refer'
             ultimo_mes_refer = pl_series_dt_refer[-1].month 
