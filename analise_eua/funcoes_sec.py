@@ -1,10 +1,13 @@
-from bs4 import BeautifulSoup
 import calendar
 import logging
-import numpy as np
 import os
-import requests
+
+import numpy as np
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 statement_keys_map = {
@@ -57,7 +60,8 @@ statement_keys_map = {
         "condensed consolidated statements of operations (unaudited)",
         "statements of operations",
         "statement of operations",
-        "condensed statements of operations"
+        "condensed statements of operations",
+        "consolidated condensed statements of operations",
     ],
 
     "income_statement_2": [
@@ -117,6 +121,7 @@ statement_keys_map = {
         "net income per share - schedule of earnings per share (details)",
         "net income per share (details)",
         "net income per share (schedule of earnings per share) (details)",
+        "net income per common share (details)",
         # META -> 'Note 4. Earnings per Share'
         "earnings per share - schedule of numerators and denominators of basic and diluted eps computations for common stock (details)"
     ],
@@ -187,7 +192,7 @@ def cik_matching_ticker(ticker, headers=header):
 
     ticker = ticker.upper().replace('.', '')
 
-    ticker_json = requests.get('https://www.sec.gov/files/company_tickers.json', headers=header).json()
+    ticker_json = requests.get('https://www.sec.gov/files/company_tickers.json', headers=headers).json()
     
     for company in ticker_json.values():
         if company['ticker'] == ticker:
@@ -199,11 +204,11 @@ def cik_matching_ticker(ticker, headers=header):
 
 def get_submission_data_for_ticker(ticker, headers=header, only_filings_df=False):
 
-    cik = cik_matching_ticker(ticker)
+    cik = cik_matching_ticker(ticker, headers)
 
     url = f'https://data.sec.gov/submissions/CIK{cik}.json'
 
-    company_json = requests.get(url, headers=header).json()
+    company_json = requests.get(url, headers=headers).json()
 
     if only_filings_df:
         return pd.DataFrame(company_json['filings']['recent'])
@@ -1424,8 +1429,6 @@ def save_dataframe_to_csv(dataframe, folder_name, ticker, statement_name, freque
     file_path = os.path.join(directory_path, f"{statement_name}_{frequency}.csv")
     dataframe.to_csv(file_path)
     
-    return None
-
 
 def _get_file_name(report):
     html_file_name_tag = report.find("HtmlFileName")
@@ -1691,8 +1694,8 @@ def process_one_statement(ticker, accession_number, statement_name):
             headers=header,
             statement_keys_map=statement_keys_map,
         )
-    except Exception as e:
-        logging.error(
+    except Exception as e:  # noqa: BLE001 - fronteira: qualquer falha de rede/parse vira None
+        logger.error(
             f"Failed to get statement soup: {e} for accession number: {accession_number}"
         )
         return None
@@ -1711,14 +1714,14 @@ def process_one_statement(ticker, accession_number, statement_name):
                 # Remove duplicate columns
                 df = df.T.drop_duplicates()
             else:
-                logging.warning(
+                logger.warning(
                     f"Empty DataFrame for accession number: {accession_number}"
                 )
                 return None
 
             return df
-        except Exception as e:
-            logging.error(f"Error processing statement: {e}")
+        except Exception as e:  # noqa: BLE001 - fronteira: qualquer falha de parse vira None
+            logger.error(f"Error processing statement: {e}")
             return None
 
 
@@ -1754,8 +1757,8 @@ def ajustar_mes_02_05_08(dt):
             dt = pd.to_datetime(dt)  # garante que é datetime
             novo_mes = map_months.get(dt.month, dt.month)
             return dt.replace(month=novo_mes)
-        except Exception:
-            raise ValueError('O valor fornecido não é uma data válida.')
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
     return dt
 
 
@@ -1774,8 +1777,8 @@ def ajustar_mes_03_06_09(dt):
             dt = pd.to_datetime(dt)  # garante que é datetime
             novo_mes = map_months.get(dt.month, dt.month)
             return dt.replace(month=novo_mes)
-        except Exception:
-            raise ValueError('O valor fornecido não é uma data válida.')
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
     return dt
 
 
@@ -1794,8 +1797,8 @@ def ajustar_mes_04_07_10(dt):
             dt = pd.to_datetime(dt)  # garante que é datetime
             novo_mes = map_months.get(dt.month, dt.month)
             return dt.replace(month=novo_mes)
-        except Exception:
-            raise ValueError('O valor fornecido não é uma data válida.')
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
     return dt
 
 
@@ -1814,8 +1817,8 @@ def ajustar_mes_12_03_06(dt):
             dt = pd.to_datetime(dt)  # garante que é datetime
             novo_mes = map_months.get(dt.month, dt.month)
             return dt.replace(month=novo_mes)
-        except Exception:
-            raise ValueError('O valor fornecido não é uma data válida.')
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
     return dt
 
 
@@ -1834,6 +1837,6 @@ def ajustar_mes_12_03_06_aapl(dt):
             dt = pd.to_datetime(dt)  # garante que é datetime
             novo_mes = map_months.get(dt.month, dt.month)
             return dt.replace(month=novo_mes)
-        except Exception:
-            raise ValueError('O valor fornecido não é uma data válida.')
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
     return dt
