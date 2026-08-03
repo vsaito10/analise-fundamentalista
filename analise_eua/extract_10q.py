@@ -1,8 +1,7 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
-
 from funcoes_sec import (
     quarterly_balance_sheet_from_companyfacts,
     quarterly_cash_flow_from_companyfacts,

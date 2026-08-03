@@ -1,5 +1,5 @@
-from datetime import datetime # noqa: F401
-from plotly.subplots import make_subplots
+from datetime import datetime  # noqa: F401
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -8,6 +8,7 @@ import scipy.cluster.hierarchy as sch
 import scipy.stats as sps
 import statsmodels.api as sm
 import yfinance as yf
+from plotly.subplots import make_subplots
 
 
 # Funções de indicadores gerais de mercado
@@ -219,7 +220,7 @@ def plot_indicator_scatter(ten_k: bool, lst_dfs: list, indicador: str, setor: st
             ))
 
         # Adicionando uma linha horizontal
-        fig.add_hline(y=0, line=dict(color='red', width=1), line_dash='dash')
+        fig.add_hline(y=0, line={'color': 'red', 'width': 1}, line_dash='dash')
 
         # Atualizando o layout
         fig.update_layout(
@@ -241,7 +242,7 @@ def plot_indicator_scatter(ten_k: bool, lst_dfs: list, indicador: str, setor: st
             ))
 
         # Adicionando uma linha horizontal
-        fig.add_hline(y=0, line=dict(color='red', width=1))
+        fig.add_hline(y=0, line={'color': 'red', 'width': 1})
 
         # Atualizando o layout
         fig.update_layout(
@@ -280,7 +281,7 @@ def plot_indicator_bar(lst_dfs: list, indicador: str, setor: str):
         ))
 
     # Adicionando uma linha horizontal
-    fig.add_hline(y=0, line=dict(color='red', width=1), line_dash='dash')
+    fig.add_hline(y=0, line={'color': 'red', 'width': 1}, line_dash='dash')
 
     # Atualizando o layout
     fig.update_layout(
@@ -332,7 +333,7 @@ def plot_indicators_subplot_scatter(ten_k: bool, lst_dfs: list, indicadores: lis
 
         # Adicionando uma linha horizontal
         fig.update_yaxes(fixedrange=True)
-        fig.add_hline(y=0, line=dict(color='red', width=1), line_dash='dash')
+        fig.add_hline(y=0, line={'color': 'red', 'width': 1}, line_dash='dash')
 
         # Atualizando o layout
         fig.update_layout(
@@ -363,7 +364,7 @@ def plot_indicators_subplot_scatter(ten_k: bool, lst_dfs: list, indicadores: lis
 
         # Adicionando uma linha horizontal
         fig.update_yaxes(fixedrange=True)
-        fig.add_hline(y=0, line=dict(color='red', width=1), line_dash='dash')
+        fig.add_hline(y=0, line={'color': 'red', 'width': 1}, line_dash='dash')
 
         # Atualizando o layout
         fig.update_layout(
@@ -413,7 +414,7 @@ def plot_indicators_subplot_bar(lst_dfs: list, indicadores: list, setor: str):
 
     # Adicionando uma linha horizontal
     fig.update_yaxes(fixedrange=True)
-    fig.add_hline(y=0, line=dict(color='red', width=1), line_dash='dash')
+    fig.add_hline(y=0, line={'color': 'red', 'width': 1}, line_dash='dash')
 
     # Atualizando o layout
     fig.update_layout(
@@ -456,7 +457,7 @@ def plot_only_indicators_subplot_bar(lst_dfs: list, indicador: str, setor:str):
         )
 
     # Iterando sobre os dfs p/ fazer o plot do indicador fundamentalista específico
-    for i, (empresa, df) in enumerate(lst_dfs, start=1):
+    for i, (_empresa, df) in enumerate(lst_dfs, start=1):
         fig.add_trace(go.Bar(
             x=df.index,
             y=df[indicador].values
@@ -493,7 +494,7 @@ def plot_indicators_subplot_histogram(df_setor: pd.DataFrame, setor: str):
 
     # Lista com os nomes das empresas do setor p/ serem plotadas apenas nos subplots da 'col=1'
     # ['AMD', '', 'AVGO', '', 'INTC', '', 'MU', '', 'NVDA']
-    lst_subtitles_col_1 = [item for empresa in df_log_returns.keys() for item in (empresa, '')]
+    lst_subtitles_col_1 = [item for empresa in df_log_returns for item in (empresa, '')]
 
     # Plotando o histograma dos retornos logarítmicos
     fig = make_subplots(
@@ -518,10 +519,10 @@ def plot_indicators_subplot_histogram(df_setor: pd.DataFrame, setor: str):
         y_values = sps.norm.pdf(x_values, mu_norm, sig_norm)
 
         # Adicionando a curva de distribuição normal como um traço
-        fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='lines', line_width=0.5, line=dict(color='red')), row=row, col=1)
+        fig.add_trace(go.Scatter(x=x_values, y=y_values, mode='lines', line_width=0.5, line={'color': 'red'}), row=row, col=1)
 
         # Adicionando uma linha vertical no ponto 0
-        fig.add_vline(x=0, line=dict(color='red', width=1), row=row, col=1)
+        fig.add_vline(x=0, line={'color': 'red', 'width': 1}, row=row, col=1)
 
         # Plot Scatter
         fig.add_trace(go.Scatter(
@@ -530,7 +531,7 @@ def plot_indicators_subplot_histogram(df_setor: pd.DataFrame, setor: str):
         ), row=row, col=2)
 
         # Adicionando uma linha horizontal
-        fig.add_hline(y=0, line=dict(color='red', width=1), row=row, col=2)
+        fig.add_hline(y=0, line={'color': 'red', 'width': 1}, row=row, col=2)
     
     # Atualizando o layout
     fig.update_layout(
@@ -561,7 +562,7 @@ def subplot_qqplot(df_setor: pd.DataFrame):
 
     # Subplot do qqplot das empresas
     with plt.style.context('ggplot'):
-        fig, axs = plt.subplots(len(df_log_returns2.columns), 1, figsize=(8, 25))
+        _fig, axs = plt.subplots(len(df_log_returns2.columns), 1, figsize=(8, 25))
 
         for idx, empresa in enumerate(df_log_returns2.columns):
             axs[idx].set_title(f'QQ-plot {empresa}', fontsize=16)
@@ -611,15 +612,15 @@ def plot_risk_return(df_setor: pd.DataFrame, setor: str):
             x=[df_risk_return.loc['mean', empresa]],
             y=[df_risk_return.loc['std', empresa]],
             mode='markers',
-            marker=dict(symbol='star', size=10),
+            marker={'symbol': 'star', 'size': 10},
             name=empresa
         ))
 
     # Atualizando o layout
     fig.update_layout(
         title=f'Setor de {setor} - Gráfico risco x retorno',
-        xaxis=dict(title='Média Esperada Retorno Diário'),
-        yaxis=dict(title='Risco Diário'),
+        xaxis={'title': 'Média Esperada Retorno Diário'},
+        yaxis={'title': 'Risco Diário'},
         showlegend=True
     )
 
