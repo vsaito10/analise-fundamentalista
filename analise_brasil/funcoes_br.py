@@ -1,19 +1,16 @@
-from datetime import datetime, timedelta # noqa: F401
+from datetime import datetime, timezone
 from functools import reduce
-from pathlib import Path # noqa: F401
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import polars as pl
+import scipy.cluster.hierarchy as sch
+import statsmodels.api as sm
+import yfinance as yf
 from plotly.subplots import make_subplots
 from scipy.sparse.csgraph import connected_components
 from tqdm import tqdm
-import matplotlib.pyplot as plt # noqa: F401
-import numpy as np
-import pandas as pd
-import polars as pl 
-import scipy.cluster.hierarchy as sch
-import plotly.express as px # noqa: F401
-import plotly.graph_objects as go
-import statsmodels.api as sm
-import seaborn as sns # noqa: F401
-import yfinance as yf
 
 
 def filtro_etf(path: str) -> pd.DataFrame:
@@ -594,7 +591,7 @@ def pl_ibov(df: pd.DataFrame, df_ibovespa: pd.DataFrame) -> pd.DataFrame:
   return pl_ibov
 
 
-def vol_anual(df_setor: pd.DataFrame, ticker: str, ano: str) -> pd.Series:
+def vol_anual(df_setor: pd.DataFrame, ano: str) -> pd.Series:
     """
     Função que calcula a volatilidade anualizada.
 
@@ -602,8 +599,6 @@ def vol_anual(df_setor: pd.DataFrame, ticker: str, ano: str) -> pd.Series:
     ----------
     df_setor: pd.DataFrame
         DataFrame do setor.
-    ticker: str 
-        Ticker da empresa.
     ano: str
         Período escolhido.
 
@@ -616,9 +611,9 @@ def vol_anual(df_setor: pd.DataFrame, ticker: str, ano: str) -> pd.Series:
     """
     lst_annualized_volatility = []
 
-    for ticker in df_setor.columns:
+    for col in df_setor.columns:
         # Calculando o retorno logarítmico
-        log_return = np.log(df_setor.loc[ano, ticker] / df_setor.loc[ano, ticker].shift(1))
+        log_return = np.log(df_setor.loc[ano, col] / df_setor.loc[ano, col].shift(1))
 
         # Calculando a volatilidade anualizada
         annualized_volatility = np.std(log_return) * np.sqrt(252)
@@ -1031,7 +1026,7 @@ def plot_snr_adj_close(
         y=close, 
         mode='lines',
         name='Close',
-        line=dict(color='blue')
+        line={'color': 'blue'}
     ), row=1, col=1)
 
     fig.add_trace(go.Scatter(
@@ -1039,7 +1034,7 @@ def plot_snr_adj_close(
         y=snr_values, 
         mode='lines',
         name='SNR',
-        line=dict(color='red')
+        line={'color': 'red'}
     ), row=2, col=1)
 
     fig.update_layout(
@@ -1077,7 +1072,7 @@ def plot_snr_vs_returns(snr_values: pd.Series, returns: pd.Series):
         y=returns,
         mode='markers',
         name='SNR vs Returns',
-        marker=dict(color='green')
+        marker={'color': 'green'}
     ))
 
     fig.update_layout(
@@ -1226,7 +1221,7 @@ def plot_rsi_divergence(df: pd.Series, rsi: pd.Series, divergences: pd.DataFrame
 
     # Gráfico de Preço (Linha)
     fig.add_trace(
-        go.Scatter(x=df.index, y=df, name='Preço', line=dict(color='royalblue', width=1)),
+        go.Scatter(x=df.index, y=df, name='Preço', line={'color': 'royalblue', 'width': 1}),
         row=1, col=1
     )
 
@@ -1236,30 +1231,30 @@ def plot_rsi_divergence(df: pd.Series, rsi: pd.Series, divergences: pd.DataFrame
 
     fig.add_trace(
         go.Scatter(x=bullish['Date'], y=bullish['Price'], mode='markers',
-                   name='Bullish Div (Preço)', marker=dict(color='green', size=8, symbol='triangle-up')),
+                   name='Bullish Div (Preço)', marker={'color': 'green', 'size': 8, 'symbol': 'triangle-up'}),
         row=1, col=1
     )
     fig.add_trace(
         go.Scatter(x=bearish['Date'], y=bearish['Price'], mode='markers',
-                   name='Bearish Div (Preço)', marker=dict(color='red', size=8, symbol='triangle-down')),
+                   name='Bearish Div (Preço)', marker={'color': 'red', 'size': 8, 'symbol': 'triangle-down'}),
         row=1, col=1
     )
 
     # Gráfico de RSI (Linha)
     fig.add_trace(
-        go.Scatter(x=rsi.index, y=rsi, name='RSI', line=dict(color='orange', width=1.5)),
+        go.Scatter(x=rsi.index, y=rsi, name='RSI', line={'color': 'orange', 'width': 1.5}),
         row=2, col=1
     )
 
     # Divergências no RSI (Scatter)
     fig.add_trace(
         go.Scatter(x=bullish['Date'], y=bullish['RSI'], mode='markers',
-                   name='Bullish Div (RSI)', marker=dict(color='green', size=8, symbol='circle')),
+                   name='Bullish Div (RSI)', marker={'color': 'green', 'size': 8, 'symbol': 'circle'}),
         row=2, col=1
     )
     fig.add_trace(
         go.Scatter(x=bearish['Date'], y=bearish['RSI'], mode='markers',
-                   name='Bearish Div (RSI)', marker=dict(color='red', size=8, symbol='circle')),
+                   name='Bearish Div (RSI)', marker={'color': 'red', 'size': 8, 'symbol': 'circle'}),
         row=2, col=1
     )
 
@@ -1779,7 +1774,7 @@ def ativo_fechamento_trimestral(
         ultimo_fechamento_hist = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now().year
+        ano_atual_int = datetime.now(tz=timezone.utc).year
 
         # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
         ultimo_fechamento_filt_atual = ultimo_fechamento_mes.loc[str(ano_atual_int)]
@@ -1830,7 +1825,7 @@ def ativo_fechamento_trimestral(
         ultimo_fechamento_hist = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now().year
+        ano_atual_int = datetime.now(tz=timezone.utc).year
 
         # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
         ultimo_fechamento_filt_atual = ultimo_fechamento_mes.loc[str(ano_atual_int)]
@@ -1928,7 +1923,7 @@ def ativo_fechamento_trimestral_csv(
         ultimo_fechamento_mes = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now().year
+        ano_atual_int = datetime.now(tz=timezone.utc).year
         # Ano do lançamento mais recente
         ano_lancamento_mais_recente = pl_series_dt_refer[-1].year
 
@@ -2011,7 +2006,7 @@ def ativo_fechamento_trimestral_csv(
         ultimo_fechamento_mes_pn = fechamento_trimestral_filt_pn.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now().year
+        ano_atual_int = datetime.now(timezone.utc).year
         # Ano do lançamento mais recente
         ano_lancamento_mais_recente = pl_series_dt_refer[-1].year
 
@@ -3092,9 +3087,7 @@ def indicador_roic(df_dre: pl.DataFrame, df_bpp: pl.DataFrame, cod_cvm: int, cod
     ir = ir.rename({'vl_conta': 'ir'})
 
     # Multiplicando por -1
-    ir = ir.with_columns(
-        (pl.col('ir') * -1)
-    )
+    ir = ir.with_columns(pl.col('ir') * -1)
 
     # Juntando os dfs
     df_nopat = ebit.join(ir, on='dt_refer', how='inner')
@@ -3196,9 +3189,7 @@ def indicador_roic_trimestral(df_dre: pl.DataFrame, df_bpp: pl.DataFrame, cod_cv
     ir = ir.rename({'vl_conta': 'ir'})
 
     # Multiplicando por -1
-    ir = ir.with_columns(
-        (pl.col('ir') * -1)
-    )
+    ir = ir.with_columns(pl.col('ir') * -1)
 
     # Calculando o ir acumulado
     ir_acumulado = ir.with_columns(
@@ -3737,9 +3728,7 @@ def indicador_buyback(df_dfc: pl.DataFrame, cod_cvm: int, cod_buyback: str) -> p
     df_buyback = buyback.rename({'vl_conta': 'buyback'})
 
     # Multiplicando por -1
-    df_buyback = df_buyback.with_columns(
-        (pl.col('buyback') * -1)
-    )
+    df_buyback = df_buyback.with_columns(pl.col('buyback') * -1)
 
     return df_buyback
 
@@ -3772,9 +3761,7 @@ def indicador_buyback_trimestral(df_dfc: pl.DataFrame, cod_cvm: int, cod_buyback
     buyback = buyback.rename({'vl_conta': 'buyback'})
 
     # Multiplicando por -1
-    buyback = buyback.with_columns(
-        (pl.col('buyback') * -1)
-    )
+    buyback = buyback.with_columns(pl.col('buyback') * -1)
 
     # Calculando o buyback não acumulado para os meses 06 e 09
     df_buyback_nao_acum = buyback.with_columns([(
@@ -4434,9 +4421,7 @@ def indicador_rd(df_dre: pl.DataFrame, cod_cvm: int, cod_rd: str, anual: bool) -
         df_rd_anual = rd.rename({'vl_conta': 'rd'})
 
         # Multiplicando por -1
-        df_rd_anual = df_rd_anual.with_columns(
-            (pl.col('rd') * -1)
-        )
+        df_rd_anual = df_rd_anual.with_columns(pl.col('rd') * -1)
 
         return df_rd_anual
     
@@ -4459,9 +4444,7 @@ def indicador_rd(df_dre: pl.DataFrame, cod_cvm: int, cod_rd: str, anual: bool) -
         df_rd_trimestral = rd.rename({'vl_conta': 'rd'})
 
         # Multiplicando por -1
-        df_rd_trimestral = df_rd_trimestral.with_columns(
-            (pl.col('rd') * -1)
-        )
+        df_rd_trimestral = df_rd_trimestral.with_columns(pl.col('rd') * -1)
 
         # Calculando o rd trimestral acumulado
         expr_rd_acum = (
@@ -4582,9 +4565,7 @@ def indicador_change_in_non_cash_wc(df_dfc: pl.DataFrame, cod_cvm: int, cod_chan
     df_change_in_non_cash_wc = change_in_non_cash_wc.rename({'vl_conta': 'change_in_non_cash_wc'})
 
     # Multiplicando por -1
-    df_change_in_non_cash_wc = df_change_in_non_cash_wc.with_columns(
-        (pl.col('change_in_non_cash_wc') * -1)
-    )
+    df_change_in_non_cash_wc = df_change_in_non_cash_wc.with_columns(pl.col('change_in_non_cash_wc') * -1)
 
     return df_change_in_non_cash_wc
 
@@ -4619,9 +4600,7 @@ def indicador_change_in_non_cash_wc_trimestral(df_dfc: pl.DataFrame, cod_cvm: in
     df_change_in_non_cash_wc = change_in_non_cash_wc.rename({'vl_conta': 'change_in_non_cash_wc'})
 
     # Multiplicando por -1
-    df_change_in_non_cash_wc = df_change_in_non_cash_wc.with_columns(
-        (pl.col('change_in_non_cash_wc') * -1)
-    )
+    df_change_in_non_cash_wc = df_change_in_non_cash_wc.with_columns(pl.col('change_in_non_cash_wc') * -1)
 
     # Calculando o change in non-cash wc não acumulado para os meses 06 e 09 (e mantendo caso contrário)
     expr_nao_acum = (
@@ -4693,9 +4672,7 @@ def indicador_reinvestment_rate(df_dre: pl.DataFrame, cod_cvm: int, cod_ebit: st
     ir = ir.rename({'vl_conta': 'ir'})
 
     # Multiplicando por -1
-    ir = ir.with_columns(
-        (pl.col('ir') * -1)
-    )
+    ir = ir.with_columns(pl.col('ir') * -1)
 
     # Juntando os dfs
     df_reinvestment_rate_denominator = ebit.join(ir, on='dt_refer', how='inner')
@@ -4796,9 +4773,7 @@ def indicador_reinvestment_rate_trimestral(df_dre: pl.DataFrame, cod_cvm: int, c
     df_ir_acum = ir.with_columns([expr_ir_acum]).select('dt_refer', 'ir').fill_null(0)
 
     # Multiplicando por -1
-    df_ir_acum = df_ir_acum.with_columns(
-        (pl.col('ir') * -1)
-    )
+    df_ir_acum = df_ir_acum.with_columns(pl.col('ir') * -1)
 
     # Juntando os dfs
     df_reinvestment_rate_denominator = df_ebit_acum.join(df_ir_acum, on='dt_refer', how='inner')
@@ -4861,9 +4836,7 @@ def indicador_effective_tax_rate(df_dre: pl.DataFrame, cod_cvm: int, cod_ir: str
         ir = ir.rename({'vl_conta': 'ir'})
 
         # Multiplicando por -1
-        ir = ir.with_columns(
-            (pl.col('ir') * -1)
-        )
+        ir = ir.with_columns(pl.col('ir') * -1)
 
         # Selecionando o resultado antes dos tributos sobre o lucro (earnings before tax - ebt)	
         ebt = dre_empresa.filter(pl.col('cd_conta') == cod_ebt).select('dt_refer', 'vl_conta')
@@ -4890,9 +4863,7 @@ def indicador_effective_tax_rate(df_dre: pl.DataFrame, cod_cvm: int, cod_ir: str
         ir = ir.rename({'vl_conta': 'ir'})
 
         # Multiplicando por -1
-        ir = ir.with_columns(
-            (pl.col('ir') * -1)
-        )
+        ir = ir.with_columns(pl.col('ir') * -1)
 
         # Selecionando o resultado antes dos tributos sobre o lucro (earnings before tax - ebt)	
         ebt = dre_empresa.filter(pl.col('cd_conta') == cod_ebt).select('dt_refer', 'dt_ini_exerc', 'vl_conta')
@@ -5333,12 +5304,12 @@ def indicador_fcfe(
     )
 
     # Calculando o FCFE
-    df_fcfe = df_fcfe.with_columns((
+    df_fcfe = df_fcfe.with_columns(
         (
             pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
         )
         .alias('fcfe')
-    )).select('dt_refer', 'fcfe')
+    ).select('dt_refer', 'fcfe')
 
     return df_fcfe
 
@@ -5405,12 +5376,12 @@ def indicador_fcfe_2(
     )
 
     # Calculando o FCFE
-    df_fcfe = df_fcfe.with_columns((
+    df_fcfe = df_fcfe.with_columns(
         (
             pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
         )
         .alias('fcfe')
-    )).select('dt_refer', 'fcfe')
+    ).select('dt_refer', 'fcfe')
 
     return df_fcfe
 
@@ -5532,12 +5503,12 @@ def indicador_fcfe_trimestral(
     )
 
     # Calculando o FCFE
-    df_fcfe = df_fcfe.with_columns((
+    df_fcfe = df_fcfe.with_columns(
         (
             pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
         )
         .alias('fcfe')
-    )).select('dt_refer', 'fcfe')
+    ).select('dt_refer', 'fcfe')
 
     return df_fcfe
 
@@ -5620,12 +5591,12 @@ def indicador_fcfe_trimestral_2(
     )
 
     # Calculando o FCFE
-    df_fcfe = df_fcfe.with_columns((
+    df_fcfe = df_fcfe.with_columns(
         (
             pl.col('lucro_liquido') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc') + (pl.col('new_borrowing') - pl.col('debt_paid'))
         )
         .alias('fcfe')
-    )).select('dt_refer', 'fcfe')
+    ).select('dt_refer', 'fcfe')
 
     return df_fcfe
 
@@ -5700,12 +5671,12 @@ def indicador_fcff(
     )
 
     # Calculando o FCFE
-    df_fcff = df_fcff.with_columns((
+    df_fcff = df_fcff.with_columns(
         (
             pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
         )
         .alias('fcff')
-    )).select('dt_refer', 'fcff')
+    ).select('dt_refer', 'fcff')
 
     return df_fcff
 
@@ -5768,12 +5739,12 @@ def indicador_fcff_2(
     )
 
     # Calculando o FCFE
-    df_fcff = df_fcff.with_columns((
+    df_fcff = df_fcff.with_columns(
         (
             pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
         )
         .alias('fcff')
-    )).select('dt_refer', 'fcff')
+    ).select('dt_refer', 'fcff')
 
     return df_fcff
 
@@ -5891,12 +5862,12 @@ def indicador_fcff_trimestral(
     )
 
     # Calculando o FCFE
-    df_fcff = df_fcff.with_columns((
+    df_fcff = df_fcff.with_columns(
         (
             pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
         )
         .alias('fcff')
-    )).select('dt_refer', 'fcff')
+    ).select('dt_refer', 'fcff')
 
     return df_fcff
 
@@ -5975,12 +5946,12 @@ def indicador_fcff_trimestral_2(
     )
 
     # Calculando o FCFE
-    df_fcff = df_fcff.with_columns((
+    df_fcff = df_fcff.with_columns(
         (
             pl.col('ebit') - pl.col('taxes_on_operating_income') + pl.col('depreciacao') - pl.col('capex') - pl.col('change_in_non_cash_wc')
         )
         .alias('fcff')
-    )).select('dt_refer', 'fcff')
+    ).select('dt_refer', 'fcff')
 
     return df_fcff
 
@@ -6011,7 +5982,7 @@ def verificar_codigos_dfc_anual(
         A funcao imprime no console a descricao (`ds_conta`) e o valor
         (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
     """
-    dt_refer = datetime(ano, 12, 31)
+    dt_refer = datetime(ano, 12, 31)  # noqa: DTZ001
     dt_refer_label = dt_refer.strftime("%Y-%m-%d")
 
     df_ano = (
@@ -6076,7 +6047,7 @@ def verificar_codigos_dfc_trimestral(
         A funcao imprime no console a descricao (`ds_conta`) e o valor
         (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
     """
-    dt_refer = datetime(ano, mes, 30 if mes in {6, 9} else 31)
+    dt_refer = datetime(ano, mes, 30 if mes in {6, 9} else 31)  # noqa: DTZ001
     dt_refer_label = dt_refer.strftime("%Y-%m-%d")
 
     df_trimestre = (

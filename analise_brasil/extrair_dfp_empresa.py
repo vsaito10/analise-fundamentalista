@@ -9,10 +9,10 @@ Uso:
 
 Ajuste as variáveis EMPRESA e OUTPUT_DIR abaixo para mudar a empresa ou destino.
 """
+from pathlib import Path
 
 import pandas as pd
-from pathlib import Path
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 PARQUET_DIR = Path("C:/B3/historico-arquivos/dfp-b3/dfp-cia-aberta/consolidados")
