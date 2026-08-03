@@ -1,0 +1,9 @@
+# Configuração do Ruff para o projeto analise-fundamentalista.
+
+[lint.per-file-ignores]
+# Notebooks Jupyter: ignora as regras DTZ (flake8-datetimez).
+# Nesses notebooks os `datetime(...)` representam datas de referência contábeis
+# (fins de trimestre/ano) comparadas contra colunas polars *naive*. Adicionar
+# `tzinfo` — a correção sugerida pelo DTZ — quebraria essas comparações no polars.
+# Os scripts .py continuam sujeitos às regras DTZ normalmente.
+"*.ipynb" = ["DTZ"]
