@@ -535,14 +535,14 @@ def plot_indicators_subplot_histogram(df_setor: pd.DataFrame, setor: str):
     
     # Atualizando o layout
     fig.update_layout(
-        height=3000,
+        height=max(420, 360 * len(df_log_returns.columns)),
         width=1200,
         title_text=f'Setor de {setor} - Histogramas e gráfico de linhas dos retornos logarítmicos',
         template='seaborn',
         showlegend=False
     )
 
-    return fig.show()
+    return fig
 
 
 def subplot_qqplot(df_setor: pd.DataFrame):

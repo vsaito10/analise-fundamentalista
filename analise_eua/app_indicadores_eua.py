@@ -8,20 +8,23 @@ e contêm as abas ``indicators_10k`` (anual) e ``indicators_10q`` (trimestral).
 Os demonstrativos estão em US$ milhões; o valor de mercado, em US$ milhares.
 """
 
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import time
 import unicodedata
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
+import numpy as np
 import openpyxl
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-
+from curl_cffi.requests import RequestsError
+from scipy.stats import t as student_t
+from yfinance.exceptions import YFException
 
 RAIZ_PADRAO = r"C:\B3\historico-arquivos\indicadores_fundamentalistas_eua"
 RAIZ_VALUATIONS = r"C:\B3\historico-arquivos\valuations\atualizado"
@@ -171,13 +174,13 @@ def fmt(valor: float, tipo: str) -> str:
 
 def _layout(fig: go.Figure, cores: dict, titulo: str, unidade: str, n_series: int) -> go.Figure:
     margem_inferior = 58 if n_series >= 2 else 8
-    fig.update_layout(title=dict(text=titulo, font=dict(size=15, color=cores["texto"]), x=0, xanchor="left"), height=360,
-                      margin=dict(l=8, r=64, t=56, b=margem_inferior), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      font=dict(color=cores["texto_2"], size=12), hovermode="x unified", showlegend=n_series >= 2,
-                      legend=dict(orientation="h", yanchor="top", y=-0.2, xanchor="left", x=0, bgcolor="rgba(0,0,0,0)", font=dict(color=cores["texto_2"])), bargap=0.35)
+    fig.update_layout(title={'text': titulo, 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"}, height=360,
+                      margin={'l': 8, 'r': 64, 't': 56, 'b': margem_inferior}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font={'color': cores["texto_2"], 'size': 12}, hovermode="x unified", showlegend=n_series >= 2,
+                      legend={'orientation': "h", 'yanchor': "top", 'y': -0.2, 'xanchor': "left", 'x': 0, 'bgcolor': "rgba(0,0,0,0)", 'font': {'color': cores["texto_2"]}}, bargap=0.35)
     fig.update_xaxes(showgrid=False, linecolor=cores["grade"], tickcolor=cores["grade"], ticks="outside", type="category")
     fig.update_yaxes(showgrid=True, gridcolor=cores["grade"], zeroline=True, zerolinecolor=cores["grade"], zerolinewidth=1,
-                     title=dict(text=unidade, font=dict(size=11, color=cores["texto_2"])))
+                     title={'text': unidade, 'font': {'size': 11, 'color': cores["texto_2"]}})
     return fig
 
 
@@ -186,7 +189,7 @@ def linhas(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go
     for i, coluna in enumerate(colunas):
         metrica, valores = METRICAS[coluna], escala(df, coluna)
         fig.add_trace(go.Scatter(x=df["periodo"], y=valores, name=metrica.label, mode="lines+markers",
-                                 line=dict(color=cores["serie"][i], width=2), marker=dict(size=8, color=cores["serie"][i]),
+                                 line={'color': cores["serie"][i], 'width': 2}, marker={'size': 8, 'color': cores["serie"][i]},
                                  hovertemplate=f"{metrica.label}: %{{customdata}}<extra></extra>", customdata=[fmt(v, metrica.tipo) for v in valores]))
     return _layout(fig, cores, titulo, METRICAS[colunas[0]].unidade, len(colunas))
 
@@ -196,7 +199,7 @@ def barras(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go
     for i, coluna in enumerate(colunas):
         metrica, valores = METRICAS[coluna], escala(df, coluna)
         cor = [cores["positivo"] if v >= 0 else cores["negativo"] for v in valores.fillna(0)] if uma_serie else cores["serie"][i]
-        fig.add_trace(go.Bar(x=df["periodo"], y=valores, name=metrica.label, marker=dict(color=cor, line=dict(width=0)),
+        fig.add_trace(go.Bar(x=df["periodo"], y=valores, name=metrica.label, marker={'color': cor, 'line': {'width': 0}},
                              text=[numero(v) for v in valores] if uma_serie and len(df) <= 12 else None, textposition="outside", cliponaxis=False,
                              hovertemplate=f"{metrica.label}: %{{customdata}}<extra></extra>", customdata=[fmt(v, metrica.tipo) for v in valores]))
     fig.update_layout(barmode="group")
@@ -246,13 +249,13 @@ def ranking_barras(dados: pd.DataFrame, coluna: str, cores: dict, destaque: str)
     serie = serie.sort_values(coluna, ascending=RANKING[coluna] == "menor")
     sentido = "menor é melhor" if RANKING[coluna] == "menor" else "maior é melhor"
     fig = go.Figure(go.Bar(x=serie[coluna], y=serie["Empresa"], orientation="h",
-                           marker=dict(color=[cores["serie"][0] if empresa == destaque else cores["neutro"] for empresa in serie["Empresa"]]),
+                           marker={'color': [cores["serie"][0] if empresa == destaque else cores["neutro"] for empresa in serie["Empresa"]]},
                            text=[numero(v) for v in serie[coluna]], textposition="outside", cliponaxis=False,
                            customdata=serie[["Setor", "Período"]].values,
                            hovertemplate=f"<b>%{{y}}</b><br>{metrica.label}: %{{text}}<br>%{{customdata[0]}} · %{{customdata[1]}}<extra></extra>"))
-    fig.update_layout(title=dict(text=f"{metrica.label} · {sentido}", font=dict(size=15, color=cores["texto"]), x=0, xanchor="left"),
-                      height=max(260, 26 * len(serie) + 90), margin=dict(l=8, r=64, t=52, b=8), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      font=dict(color=cores["texto_2"], size=12), showlegend=False, bargap=0.3)
+    fig.update_layout(title={'text': f"{metrica.label} · {sentido}", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+                      height=max(260, 26 * len(serie) + 90), margin={'l': 8, 'r': 64, 't': 52, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      font={'color': cores["texto_2"], 'size': 12}, showlegend=False, bargap=0.3)
     fig.update_xaxes(showgrid=True, gridcolor=cores["grade"], zeroline=True, zerolinecolor=cores["grade"], title=metrica.unidade)
     fig.update_yaxes(type="category", autorange="reversed", showgrid=False)
     return fig
@@ -267,7 +270,7 @@ def arquivo_valuation_mais_recente(empresa: str) -> Path | None:
     candidatos = []
     for arquivo in pasta.glob("*.xlsx"):
         try:
-            data = datetime.strptime(arquivo.name[:6], "%m%Y")
+            data = datetime.strptime(arquivo.name[:6], "%m%Y")  # noqa: DTZ007
         except ValueError:
             continue
         candidatos.append((data, arquivo.name, arquivo))
@@ -364,9 +367,213 @@ def carregar_ohlc(ticker: str, periodo: str) -> pd.DataFrame:
     try:
         dados = yf.download(ticker, period=periodo, interval="1d", auto_adjust=False,
                             multi_level_index=False, progress=False)
-    except Exception:
+    except (KeyError, RequestsError, ValueError, YFException):
         return pd.DataFrame(columns=colunas)
     return dados.dropna(subset=colunas)[colunas] if set(colunas).issubset(dados.columns) else pd.DataFrame(columns=colunas)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_precos_fechamento(tickers: tuple[str, ...], periodo: str) -> pd.DataFrame:
+    """Baixa os fechamentos ajustados dos ativos selecionados em uma unica consulta."""
+    import yfinance as yf
+
+    yf.cache.set_cache_location(str(Path(tempfile.gettempdir()) / "analise-fundamentalista-yfinance"))
+    try:
+        dados = yf.download(list(tickers), period=periodo, interval="1d", auto_adjust=True,
+                            multi_level_index=False, progress=False)
+    except (KeyError, RequestsError, ValueError, YFException):
+        return pd.DataFrame(columns=list(tickers))
+
+    if dados.empty:
+        return pd.DataFrame(columns=list(tickers))
+    if isinstance(dados.columns, pd.MultiIndex):
+        if "Close" in dados.columns.get_level_values(0):
+            fechamento = dados["Close"]
+        elif "Close" in dados.columns.get_level_values(1):
+            fechamento = dados.xs("Close", axis=1, level=1)
+        else:
+            return pd.DataFrame(columns=list(tickers))
+    else:
+        if "Close" not in dados.columns:
+            return pd.DataFrame(columns=list(tickers))
+        fechamento = dados["Close"]
+
+    if isinstance(fechamento, pd.Series):
+        fechamento = fechamento.to_frame(name=tickers[0])
+    return fechamento.reindex(columns=list(tickers)).dropna(how="all")
+
+
+def linhas_mercado(dados: pd.DataFrame, titulo: str, unidade: str, cores: dict,
+                   formato: str = "usd") -> go.Figure:
+    """Desenha linhas de mercado com o mesmo estilo dos demais graficos do painel."""
+    fig = go.Figure()
+    for indice, ticker in enumerate(dados.columns):
+        valores = dados[ticker]
+        texto_hover = ([f"{valor:.2%}" if pd.notna(valor) else "—" for valor in valores]
+                       if formato == "pct"
+                       else [f"US$ {valor:,.2f}" if pd.notna(valor) else "—" for valor in valores])
+        fig.add_trace(go.Scatter(
+            x=dados.index, y=valores, name=ticker, mode="lines",
+            line={'color': cores["serie"][indice], 'width': 2},
+            hovertemplate=f"<b>{ticker}</b>: %{{customdata}}<extra></extra>",
+            customdata=texto_hover,
+        ))
+    fig = _layout(fig, cores, titulo, unidade, len(dados.columns))
+    fig.update_xaxes(type="date")
+    if formato == "pct":
+        fig.update_yaxes(tickformat=".0%")
+    return fig
+
+
+def grafico_retornos_logaritmicos(precos: pd.DataFrame) -> go.Figure:
+    """Reutiliza o subplot de histogramas e retornos logaritmicos do modulo comum."""
+    try:
+        from funcoes_eua import plot_indicators_subplot_histogram
+    except ModuleNotFoundError:
+        from analise_eua.funcoes_eua import plot_indicators_subplot_histogram
+    return plot_indicators_subplot_histogram(precos, "acoes selecionadas")
+
+
+def coeficiente_hurst(serie: pd.Series) -> float:
+    """Calcula o expoente de Hurst usando a funcao comum do modulo dos EUA."""
+    try:
+        from funcoes_eua import hurst_exponent
+    except ModuleNotFoundError:
+        from analise_eua.funcoes_eua import hurst_exponent
+
+    valores = serie.dropna().to_numpy(dtype=float)
+    max_lag = min(100, len(valores) // 2)
+    if max_lag < 3:
+        return float("nan")
+    try:
+        resultado = hurst_exponent(valores, max_lag)
+        return float(resultado) if np.isfinite(resultado) else float("nan")
+    except (ValueError, TypeError, FloatingPointError):
+        return float("nan")
+
+
+def tabela_risco_retorno(precos: pd.DataFrame, preco_mercado: pd.Series,
+                          alpha: float = 0.05) -> pd.DataFrame:
+    """Calcula indicadores diarios de risco e retorno para cada ativo selecionado."""
+    retorno_mercado = preco_mercado.pct_change().dropna()
+    registros = []
+    for ticker in precos.columns:
+        serie = precos[ticker].dropna()
+        retornos = serie.pct_change().dropna()
+        alinhados = pd.concat([retornos.rename("ativo"), retorno_mercado.rename("mercado")], axis=1).dropna()
+        variancia_mercado = alinhados["mercado"].var()
+        beta = (alinhados["ativo"].cov(alinhados["mercado"]) / variancia_mercado
+                if len(alinhados) > 1 and variancia_mercado else float("nan"))
+
+        anos = (serie.index[-1] - serie.index[0]).days / 365.25 if len(serie) > 1 else 0
+        cagr = (serie.iloc[-1] / serie.iloc[0]) ** (1 / anos) - 1 if anos > 0 and serie.iloc[0] > 0 else float("nan")
+        maior_drawdown = (serie / serie.cummax() - 1).min()
+        hurst = coeficiente_hurst(serie)
+        var = retornos.quantile(alpha)
+        cvar = retornos[retornos <= var].mean()
+
+        try:
+            graus_liberdade, loc, escala_t = student_t.fit(retornos)
+            quantil_t = student_t.ppf(alpha, graus_liberdade)
+            var_t = loc + escala_t * quantil_t
+            cvar_t = (loc - escala_t * (graus_liberdade + quantil_t ** 2)
+                      * student_t.pdf(quantil_t, graus_liberdade) / (alpha * (graus_liberdade - 1)))
+            if graus_liberdade <= 1:
+                cvar_t = float("nan")
+        except (ValueError, FloatingPointError):
+            var_t, cvar_t = float("nan"), float("nan")
+
+        registros.append({
+            "Ação": ticker,
+            "Beta": beta,
+            "Hurst": hurst,
+            "CAGR": cagr * 100,
+            "Maior drawdown": maior_drawdown * 100,
+            "VaR": var * 100,
+            "CVaR": cvar * 100,
+            "VaR (student-t)": var_t * 100,
+            "CVaR (student-t)": cvar_t * 100,
+        })
+    return pd.DataFrame(registros)
+
+
+def heatmap_retornos_anuais(precos: pd.DataFrame, cores: dict) -> go.Figure | None:
+    """Mostra o retorno de cada ano-calendario em uma matriz de acoes e anos."""
+    fechamentos_anuais = precos.resample("YE").last()
+    retornos_anuais = (fechamentos_anuais.pct_change().iloc[1:] * 100).dropna(how="all")
+    if retornos_anuais.empty:
+        return None
+
+    matriz = retornos_anuais.T
+    anos = [str(data.year) for data in matriz.columns]
+    texto = [[f"{valor:.1f}%" if pd.notna(valor) else "" for valor in linha] for linha in matriz.to_numpy()]
+    fig = go.Figure(go.Heatmap(
+        z=matriz.to_numpy(), x=anos, y=matriz.index, text=texto, texttemplate="%{text}",
+        colorscale=[[0, cores["negativo"]], [0.5, cores["grade"]], [1, cores["positivo"]]],
+        zmid=0, colorbar={'title': "%"},
+        hovertemplate="<b>%{y}</b><br>%{x}: %{z:.2f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        title={'text': "Heatmap dos retornos anuais", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+        height=max(260, 44 * len(matriz) + 145), margin={'l': 8, 'r': 64, 't': 56, 'b': 8},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': cores["texto_2"], 'size': 12},
+    )
+    fig.update_xaxes(side="bottom", type="category")
+    fig.update_yaxes(type="category", autorange="reversed")
+    return fig
+
+
+def heatmap_correlacao(precos: pd.DataFrame, cores: dict) -> go.Figure | None:
+    """Mostra a correlacao dos retornos diarios entre as acoes selecionadas."""
+    correlacao = precos.pct_change().corr().dropna(how="all").dropna(how="all", axis=1)
+    if correlacao.empty:
+        return None
+
+    texto = [[f"{valor:.2f}" if pd.notna(valor) else "" for valor in linha] for linha in correlacao.to_numpy()]
+    fig = go.Figure(go.Heatmap(
+        z=correlacao.to_numpy(), x=correlacao.columns, y=correlacao.index, text=texto, texttemplate="%{text}",
+        colorscale=[[0, cores["negativo"]], [0.5, cores["grade"]], [1, cores["positivo"]]],
+        zmin=-1, zmax=1, zmid=0, colorbar={'title': "Correlação"},
+        hovertemplate="<b>%{y} × %{x}</b><br>Correlação: %{z:.2f}<extra></extra>",
+    ))
+    fig.update_layout(
+        title={'text': "Heatmap de correlação", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+        height=max(300, 48 * len(correlacao) + 145), margin={'l': 8, 'r': 86, 't': 56, 'b': 8},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': cores["texto_2"], 'size': 12},
+    )
+    fig.update_xaxes(side="bottom", type="category")
+    fig.update_yaxes(type="category", autorange="reversed")
+    return fig
+
+
+def grafico_risco_retorno(precos: pd.DataFrame, tabela: pd.DataFrame, cores: dict) -> go.Figure:
+    """Relaciona volatilidade anualizada e CAGR das acoes selecionadas."""
+    volatilidade = precos.pct_change().std() * (252 ** 0.5) * 100
+    dados = pd.DataFrame({
+        "Ação": tabela.iloc[:, 0],
+        "Volatilidade anualizada": tabela.iloc[:, 0].map(volatilidade),
+        "CAGR": tabela["CAGR"],
+    }).dropna()
+    fig = go.Figure()
+    for indice, linha in dados.reset_index(drop=True).iterrows():
+        fig.add_trace(go.Scatter(
+            x=[linha["Volatilidade anualizada"]], y=[linha["CAGR"]], mode="markers+text",
+            name=linha["Ação"], text=[linha["Ação"]], textposition="top center",
+            marker={'size': 13, 'color': cores["serie"][indice], 'line': {'color': cores["texto"], 'width': 1}},
+            hovertemplate=(f"<b>{linha['Ação']}</b><br>Volatilidade anualizada: "
+                           "%{x:.2f}%<br>CAGR: %{y:.2f}%<extra></extra>"),
+        ))
+    fig.update_layout(
+        title={'text': "Risco e retorno", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+        height=430, margin={'l': 8, 'r': 24, 't': 56, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': cores["texto_2"], 'size': 12}, showlegend=False,
+    )
+    fig.update_xaxes(title="Volatilidade anualizada (%)", showgrid=True, gridcolor=cores["grade"], zeroline=False)
+    fig.update_yaxes(title="CAGR (%)", showgrid=True, gridcolor=cores["grade"], zeroline=True,
+                     zerolinecolor=cores["negativo"], zerolinewidth=1)
+    return fig
 
 
 def candlestick(precos: pd.DataFrame, ticker: str, valor: float, arquivo: Path, cores: dict) -> go.Figure:
@@ -374,28 +581,25 @@ def candlestick(precos: pd.DataFrame, ticker: str, valor: float, arquivo: Path, 
         x=precos.index, open=precos["Open"], high=precos["High"], low=precos["Low"], close=precos["Close"],
         name=ticker, increasing_line_color=cores["positivo"], decreasing_line_color=cores["negativo"],
     ))
-    fig.add_hline(y=valor, line=dict(color=cores["serie"][1], width=2, dash="dash"),
+    fig.add_hline(y=valor, line={'color': cores["serie"][1], 'width': 2, 'dash': "dash"},
                   annotation_text=f"Valuation: US$ {valor:,.2f}", annotation_position="top left",
                   annotation_font_color=cores["serie"][1])
     fig.update_layout(
-        title=dict(text=f"{ticker} - preco de mercado e valuation", font=dict(size=15, color=cores["texto"]), x=0, xanchor="left"),
-        height=520, margin=dict(l=8, r=64, t=56, b=8), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=cores["texto_2"], size=12), hovermode="x unified", showlegend=False,
+        title={'text': f"{ticker} - preco de mercado e valuation", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+        height=520, margin={'l': 8, 'r': 64, 't': 56, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': cores["texto_2"], 'size': 12}, hovermode="x unified", showlegend=False,
         xaxis_rangeslider_visible=False,
     )
     fig.update_xaxes(showgrid=False, linecolor=cores["grade"])
     fig.update_yaxes(showgrid=True, gridcolor=cores["grade"], zeroline=False, title="US$ por acao")
     fig.add_annotation(xref="paper", yref="paper", x=0, y=-0.14, showarrow=False, xanchor="left",
                        text=f"Valuation obtido de {arquivo.name}, na aba Valuation output.",
-                       font=dict(size=11, color=cores["texto_2"]))
+                       font={'size': 11, 'color': cores["texto_2"]})
     return fig
 
 
 st.set_page_config(page_title="Indicadores fundamentalistas — EUA", page_icon="📊", layout="wide")
-try:
-    tema = st.context.theme.type
-except Exception:
-    tema = "light"
+tema = getattr(st.context.theme, "type", None) or "light"
 cores = PALETA.get(tema, PALETA["light"])
 
 st.sidebar.header("Empresa")
@@ -446,7 +650,7 @@ for faixa in (destaques[:4], destaques[4:]):
             delta = None if anterior is None or pd.isna(atual) or pd.isna(anterior) else atual - anterior
             coluna_st.metric(metrica.label, fmt(atual, metrica.tipo), None if delta is None else fmt(delta, metrica.tipo), help=metrica.ajuda or None)
 
-abas = st.tabs(["Valuation", "DCF Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Explorar", "Dados", "Ranking"])
+abas = st.tabs(["Valuation", "DCF Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Explorar", "Dados", "Ranking", "Indicadores gerais"])
 
 def existentes(*colunas: str) -> list[str]:
     return [coluna for coluna in colunas if coluna in disponiveis]
@@ -534,3 +738,95 @@ with abas[8]:
                     st.plotly_chart(ranking_barras(dados, coluna, cores, titulo_empresa), width="stretch", key=f"rank_{coluna}")
         st.subheader("Tabela comparativa")
         st.dataframe(dados.round(2), width="stretch", hide_index=True, column_config={c: st.column_config.NumberColumn(f"{METRICAS[c].label} ({METRICAS[c].unidade})", format="%.2f") for c in RANKING})
+
+with abas[9]:
+    acoes = {
+        Path(caminho_empresa).stem.removesuffix("_indicators").upper(): nome_empresa(nome_empresa_pasta)
+        for empresas in catalogo.values()
+        for nome_empresa_pasta, caminho_empresa in empresas.items()
+    }
+    ticker_atual = arquivo.stem.removesuffix("_indicators").upper()
+    tickers = st.multiselect(
+        "Ações", options=sorted(acoes), default=[ticker_atual], max_selections=len(cores["serie"]),
+        format_func=lambda ticker: (f"{ticker} - {acoes[ticker]}" if ticker in acoes
+                                    else f"{str(ticker).upper()} (ticker manual)"),
+        accept_new_options=True, placeholder="Selecione ou digite um ticker (ex.: MSFT)",
+        key="indicadores_gerais_acoes",
+    )
+    tickers = list(dict.fromkeys(str(ticker).strip().upper() for ticker in tickers if str(ticker).strip()))
+    periodos_mercado = {"2 anos": "2y", "5 anos": "5y", "10 anos": "10y"}
+    periodo_mercado = st.selectbox("Histórico de preços", list(periodos_mercado), index=0,
+                                  key="indicadores_gerais_periodo")
+    if not tickers:
+        st.info("Escolha ao menos uma ação.")
+    else:
+        with st.spinner("Baixando precos das ações selecionadas..."):
+            precos_acoes = carregar_precos_fechamento(tuple(tickers), periodos_mercado[periodo_mercado])
+        if precos_acoes.empty:
+            st.warning("Nao foi possivel obter os precos das ações selecionadas.")
+        else:
+            st.plotly_chart(linhas_mercado(precos_acoes, "Preços das ações", "US$", cores),
+                            width="stretch")
+            retorno_acumulado = precos_acoes.apply(
+                lambda serie: serie / serie.dropna().iloc[0] - 1 if serie.notna().any() else serie
+            ).dropna(how="all")
+            grafico_retorno = linhas_mercado(retorno_acumulado, "Retorno acumulado", "%", cores, formato="pct")
+            grafico_retorno.add_hline(y=0, line={'color': cores["negativo"], 'width': 1.5})
+            st.plotly_chart(grafico_retorno, width="stretch")
+            heatmap = heatmap_retornos_anuais(precos_acoes, cores)
+            if heatmap is None:
+                st.info("O histórico selecionado não contém anos suficientes para calcular os retornos anuais.")
+            else:
+                st.plotly_chart(heatmap, width="stretch")
+            momentum = (precos_acoes - precos_acoes.shift(252)).dropna(how="all")
+            if momentum.empty:
+                st.info("O historico selecionado nao contem 252 pregoes para calcular o momentum de um ano.")
+            else:
+                grafico_momentum = linhas_mercado(momentum, "Momentum - 1 ano (252 pregões)", "US$", cores)
+                grafico_momentum.add_hline(y=0, line={'color': cores["negativo"], 'width': 1.5})
+                st.plotly_chart(grafico_momentum, width="stretch")
+            retornos_log = np.log(precos_acoes / precos_acoes.shift(1))
+            volatilidade = (retornos_log.rolling(252, min_periods=252).std() * (252 ** 0.5)).dropna(how="all")
+            if volatilidade.empty:
+                st.info("O historico selecionado nao contem 252 pregoes para calcular a volatilidade anualizada.")
+            else:
+                st.plotly_chart(
+                    linhas_mercado(volatilidade, "Volatilidade anualizada (252 pregões)", "%", cores, formato="pct"),
+                    width="stretch",
+                )
+            volatilidade_movel = (retornos_log.rolling(60, min_periods=60).std() * (252 ** 0.5)).dropna(how="all")
+            if volatilidade_movel.empty:
+                st.info("O histórico selecionado não contém 60 pregões para calcular a volatilidade móvel.")
+            else:
+                st.plotly_chart(
+                    linhas_mercado(volatilidade_movel, "Volatilidade móvel (60 pregões)", "%", cores, formato="pct"),
+                    width="stretch",
+                )
+            st.plotly_chart(grafico_retornos_logaritmicos(precos_acoes), width="stretch")
+            st.subheader("Indicadores de risco e retorno")
+            st.caption("Beta contra o S&P 500; CAGR do período selecionado; VaR e CVaR diários a 95% de confiança.")
+            with st.spinner("Calculando os indicadores de risco e retorno..."):
+                precos_mercado = carregar_precos_fechamento(("^GSPC",), periodos_mercado[periodo_mercado])
+            if precos_mercado.empty or precos_mercado["^GSPC"].dropna().empty:
+                st.warning("Não foi possível obter os preços do S&P 500 para calcular o beta.")
+            else:
+                tabela_risco = tabela_risco_retorno(precos_acoes, precos_mercado["^GSPC"])
+                st.dataframe(
+                    tabela_risco,
+                    width="stretch", hide_index=True,
+                    column_config={
+                        "Beta": st.column_config.NumberColumn("Beta", format="%.2f"),
+                        "Hurst": st.column_config.NumberColumn("Hurst", format="%.3f"),
+                        "CAGR": st.column_config.NumberColumn("CAGR", format="%.2f%%"),
+                        "Maior drawdown": st.column_config.NumberColumn("Maior drawdown", format="%.2f%%"),
+                        "VaR": st.column_config.NumberColumn("VaR", format="%.2f%%"),
+                        "CVaR": st.column_config.NumberColumn("CVaR", format="%.2f%%"),
+                        "VaR (student-t)": st.column_config.NumberColumn("VaR (student-t)", format="%.2f%%"),
+                        "CVaR (student-t)": st.column_config.NumberColumn("CVaR (student-t)", format="%.2f%%"),
+                    },
+                )
+                st.caption("Hurst: abaixo de 0,5 indica reversão à média; perto de 0,5, comportamento aleatório; acima de 0,5, persistência de tendência.")
+                st.plotly_chart(grafico_risco_retorno(precos_acoes, tabela_risco, cores), width="stretch")
+                heatmap_correlacoes = heatmap_correlacao(precos_acoes, cores)
+                if heatmap_correlacoes is not None:
+                    st.plotly_chart(heatmap_correlacoes, width="stretch")
