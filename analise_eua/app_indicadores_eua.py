@@ -264,9 +264,9 @@ def ranking_barras(dados: pd.DataFrame, coluna: str, cores: dict, destaque: str)
 # ---------------------------------------------------------------------------
 # Valuation e preco de mercado
 # ---------------------------------------------------------------------------
-def arquivo_valuation_mais_recente(empresa: str) -> Path | None:
-    """Localiza o Excel mais recente pelo prefixo MMYYYY de seu nome."""
-    pasta = Path(RAIZ_VALUATIONS) / empresa
+def arquivo_valuation_mais_recente(setor: str, empresa: str) -> Path | None:
+    """Localiza o Excel mais recente em ``<setor>/<empresa>`` pelo prefixo MMYYYY."""
+    pasta = Path(RAIZ_VALUATIONS) / setor / empresa
     candidatos = []
     for arquivo in pasta.glob("*.xlsx"):
         try:
@@ -286,8 +286,24 @@ def _numero_da_celula(valor: object) -> float | None:
 
 
 def _valor_valuation(caminho: Path) -> float | None:
-    """Le B33 e usa a linha de valor por acao em modelos com outro layout."""
+    """Le o preco-alvo nos layouts de valuation disponiveis."""
     livro = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
+
+    # Modelos de energia eletrica e semicondutores: o preco-alvo esta na aba 03_DCF.
+    celulas_03_dcf = {
+        "amd": "B51", "avgo": "B51", "broadcom": "B51",
+        "ceg": "B51", "constellation": "B51", "nrg": "B51", "tln": "B51",
+        "talen": "B51", "vst": "B51", "vistra": "B51", "oklo": "B55",
+        "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
+    }
+    identificadores = [caminho.parent.name.casefold(), *caminho.stem.casefold().split("_")]
+    celula_03_dcf = next((celulas_03_dcf[identificador] for identificador in identificadores
+                           if identificador in celulas_03_dcf), None)
+    if celula_03_dcf and "03_DCF" in livro.sheetnames:
+        valor_03_dcf = _numero_da_celula(livro["03_DCF"][celula_03_dcf].value)
+        if valor_03_dcf is not None:
+            return valor_03_dcf
+
     if "Valuation output" not in livro.sheetnames:
         return None
     aba = livro["Valuation output"]
@@ -661,7 +677,7 @@ with abas[0]:
                        (barras, existentes("valor_mercado"), "Valor de mercado")])
 
 with abas[1]:
-    arquivo_valuation = arquivo_valuation_mais_recente(empresa)
+    arquivo_valuation = arquivo_valuation_mais_recente(setor, empresa)
     st.subheader("Preco de mercado e valuation")
     if arquivo_valuation is None:
         st.info("Nao ha arquivo de valuation para esta empresa no diretorio de valuations.")
