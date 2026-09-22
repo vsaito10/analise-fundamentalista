@@ -67,7 +67,9 @@ statement_keys_map = {
         "consolidated statements of operations and comprehensive loss",
         "consolidated statements of operations and comprehensive income (loss)",
         "unaudited condensed consolidated statements of operations",
-        "unaudited condensed consolidated statements of operations and comprehensive income (loss)"
+        "unaudited condensed consolidated statements of operations and comprehensive income (loss)",
+        "condensed consolidated income statements",
+        "condensed consolidated income statements (unaudited)"
     ],
 
     "income_statement_2": [
