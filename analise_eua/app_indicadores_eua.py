@@ -289,12 +289,13 @@ def _valor_valuation(caminho: Path) -> float | None:
     """Le o preco-alvo nos layouts de valuation disponiveis."""
     livro = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
 
-    # Modelos de energia eletrica, semicondutores e Netflix: preco-alvo na aba 03_DCF.
+    # Modelos com layout 03_DCF: preco-alvo na celula especifica dessa aba.
     celulas_03_dcf = {
         "amd": "B51", "avgo": "B51", "broadcom": "B51",
         "ceg": "B51", "constellation": "B51", "nrg": "B51", "tln": "B51",
         "talen": "B51", "vst": "B51", "vistra": "B51", "oklo": "B55",
         "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
+        "marvell": "B51", "mrvl": "B51",
         "netflix": "B51", "nflx": "B51",
     }
     identificadores = [caminho.parent.name.casefold(), *caminho.stem.casefold().split("_")]
@@ -602,7 +603,7 @@ def candlestick(precos: pd.DataFrame, ticker: str, valor: float, arquivo: Path, 
                   annotation_text=f"Valuation: US$ {valor:,.2f}", annotation_position="top left",
                   annotation_font_color=cores["serie"][1])
     fig.update_layout(
-        title={'text': f"{ticker} - preco de mercado e valuation", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
+        title={'text': f"{ticker} - preço de mercado e valuation", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
         height=520, margin={'l': 8, 'r': 64, 't': 56, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={'color': cores["texto_2"], 'size': 12}, hovermode="x unified", showlegend=False,
         xaxis_rangeslider_visible=False,
@@ -679,7 +680,7 @@ with abas[0]:
 
 with abas[1]:
     arquivo_valuation = arquivo_valuation_mais_recente(setor, empresa)
-    st.subheader("Preco de mercado e valuation")
+    st.subheader("Preço de mercado e valuation")
     if arquivo_valuation is None:
         st.info("Nao ha arquivo de valuation para esta empresa no diretorio de valuations.")
     else:
@@ -690,13 +691,29 @@ with abas[1]:
             st.warning(f"Nao foi possivel obter o valuation por acao de `{arquivo_valuation.name}`.")
         else:
             opcoes_candlestick = {"6 meses": "6mo", "1 ano": "1y", "2 anos": "2y"}
-            intervalo_candlestick = st.selectbox("Historico de precos", list(opcoes_candlestick), index=1)
+            intervalo_candlestick = st.selectbox("Históricos de preços", list(opcoes_candlestick), index=1)
             ticker_acao = arquivo.stem.rsplit("_", 1)[0].upper()
             with st.spinner(f"Baixando precos de {ticker_acao}..."):
                 precos = carregar_ohlc(ticker_acao, opcoes_candlestick[intervalo_candlestick])
             if precos.empty:
                 st.warning(f"Nao foi possivel obter as cotacoes OHLC de {ticker_acao}.")
             else:
+                preco_fechamento = float(precos["Close"].iloc[-1])
+                if preco_fechamento > valor_valuation:
+                    situacao = "Sobrevalorizada"
+                    rotulo_percentual = "Sobrevalorização"
+                elif preco_fechamento < valor_valuation:
+                    situacao = "Subvalorizada"
+                    rotulo_percentual = "Subvalorização"
+                else:
+                    situacao = "Em linha com o valuation"
+                    rotulo_percentual = "Diferença para o valuation"
+                diferenca_percentual = abs(preco_fechamento / valor_valuation - 1) if valor_valuation else float("nan")
+                coluna_preco, coluna_valuation, coluna_situacao, coluna_percentual = st.columns(4)
+                coluna_preco.metric("Preço de fechamento", f"US$ {preco_fechamento:,.2f}")
+                coluna_valuation.metric("Valuation", f"US$ {valor_valuation:,.2f}")
+                coluna_situacao.metric("Situação", situacao)
+                coluna_percentual.metric(rotulo_percentual, f"{diferenca_percentual:.2%}" if pd.notna(diferenca_percentual) else "—")
                 st.plotly_chart(candlestick(precos, ticker_acao, valor_valuation, arquivo_valuation, cores), width="stretch")
 
 with abas[2]:
