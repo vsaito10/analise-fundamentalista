@@ -294,9 +294,11 @@ def _valor_valuation(caminho: Path) -> float | None:
         "amd": "B51", "avgo": "B51", "broadcom": "B51",
         "ceg": "B51", "constellation": "B51", "nrg": "B51", "tln": "B51",
         "talen": "B51", "vst": "B51", "vistra": "B51", "oklo": "B55",
+        "cadence": "B51", "cdns": "B51",
         "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
         "marvell": "B51", "mrvl": "B51",
         "netflix": "B51", "nflx": "B51",
+        "synopsys": "B51", "snps": "B51",
     }
     identificadores = [caminho.parent.name.casefold(), *caminho.stem.casefold().split("_")]
     celula_03_dcf = next((celulas_03_dcf[identificador] for identificador in identificadores
