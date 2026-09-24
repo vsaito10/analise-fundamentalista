@@ -32,7 +32,7 @@ statement_keys_map = {
         "condensed consolidated balance sheets (unaudited)",
         "condensed balance sheets",
         "condensed balance sheet",
-        "unaudited condensed consolidated balance sheets"
+        "unaudited condensed consolidated balance sheets",
     ],
 
     "income_statement": [
@@ -70,7 +70,7 @@ statement_keys_map = {
         "unaudited condensed consolidated statements of operations and comprehensive income (loss)",
         "condensed consolidated income statements",
         "condensed consolidated income statements (unaudited)",
-        "unaudited condensed consolidated statements of income"
+        "unaudited condensed consolidated statements of income",
     ],
 
     "income_statement_2": [

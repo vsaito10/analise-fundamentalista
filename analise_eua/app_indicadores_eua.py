@@ -298,6 +298,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
         "marvell": "B51", "mrvl": "B51",
         "netflix": "B51", "nflx": "B51",
+        "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
     identificadores = [caminho.parent.name.casefold(), *caminho.stem.casefold().split("_")]
