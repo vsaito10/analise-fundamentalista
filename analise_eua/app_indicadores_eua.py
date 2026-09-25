@@ -292,6 +292,7 @@ def _valor_valuation(caminho: Path) -> float | None:
     # Modelos com layout 03_DCF: preco-alvo na celula especifica dessa aba.
     celulas_03_dcf = {
         "amd": "B51", "avgo": "B51", "broadcom": "B51",
+        "amat": "B51", "applied_materials": "B51",
         "ceg": "B51", "constellation": "B51", "nrg": "B51", "tln": "B51",
         "talen": "B51", "vst": "B51", "vistra": "B51", "oklo": "B55",
         "cadence": "B51", "cdns": "B51",

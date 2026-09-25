@@ -1752,6 +1752,26 @@ def rename_statement(statement, label_dictionary):
     return statement
 
 
+def ajustar_mes_01_04_07(dt):
+    """
+    Ajusta o mês de acordo com o mapeamento:
+      - 02 -> 01
+      - 05 -> 04
+      - 08 -> 07
+    """
+    # Dicionário de substituição de meses
+    map_months = {2: 1, 5: 4, 8: 7}
+    
+    if not pd.isna(dt):
+        try:
+            dt = pd.to_datetime(dt)  # garante que é datetime
+            novo_mes = map_months.get(dt.month, dt.month)
+            return dt.replace(month=novo_mes)
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
+    return dt
+
+
 def ajustar_mes_02_05_08(dt):
     """
     Ajusta o mês de acordo com o mapeamento:
