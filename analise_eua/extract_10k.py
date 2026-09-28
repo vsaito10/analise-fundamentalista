@@ -10,7 +10,6 @@ from funcoes_sec import (
 
 SCALE_DIVISOR = 1000000
 
-
 def _prepare_statement(df: pd.DataFrame) -> pd.DataFrame:
     statement = df.copy()
     statement = statement.dropna(axis=0, how="all")
@@ -20,8 +19,16 @@ def _prepare_statement(df: pd.DataFrame) -> pd.DataFrame:
     return statement
 
 
+def _remove_duplicate_balance_sheet_rows(df: pd.DataFrame) -> pd.DataFrame:
+    normalized_index = pd.Index(
+        " ".join(str(label).split()).casefold() for label in df.index
+    )
+    return df.loc[~normalized_index.duplicated(keep="first")]
+
+
 def get_balance_sheet(ticker: str) -> pd.DataFrame:
-    return _prepare_statement(annual_balance_sheet_from_companyfacts(ticker.upper()))
+    statement = annual_balance_sheet_from_companyfacts(ticker.upper())
+    return _remove_duplicate_balance_sheet_rows(_prepare_statement(statement))
 
 
 def get_income_statement(ticker: str) -> pd.DataFrame:
