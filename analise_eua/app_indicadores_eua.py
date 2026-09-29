@@ -295,6 +295,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "amat": "B51", "applied_materials": "B51",
         "ceg": "B51", "constellation": "B51", "nrg": "B51", "tln": "B51",
         "kla_corporation": "B51", "klac": "B51",
+        "lam_research": "B51", "lrcx": "B51",
         "talen": "B51", "vst": "B51", "vistra": "B51", "oklo": "B55",
         "cadence": "B51", "cdns": "B51",
         "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
