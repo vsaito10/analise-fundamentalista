@@ -866,6 +866,31 @@ def hurst_exponent(time_series: pd.DataFrame|pd.Series, max_lag: list) -> float:
 
 
 # Funções fundamentalistas
+def indicador_acumular_series_trimestrais(serie_trimestral: pd.Series, idx: list) -> pd.Series:
+    """
+    Parameters
+    ----------
+    serie_trimestral: pd.Series
+        Série pandas com os valores não acumulados de cada trimestre.
+    idx: list
+        Lista que contém as datas que serão o index do indicador.
+
+    Returns
+    -------
+    serie_acumulada_10q: pd.Series
+        Série pandas com a soma móvel de quatro trimestres.
+    """
+    # Calculando a série trimestral acumulada
+    lst_serie_acumulada_10q = []
+    for i in range(len(serie_trimestral) - 3):
+        valor_acumulado = serie_trimestral.iloc[i:i+4].sum()
+        lst_serie_acumulada_10q.append(valor_acumulado)
+
+    # Criando uma série com as datas correspondentes
+    serie_acumulada_10q = pd.Series(lst_serie_acumulada_10q, index=idx[0:len(idx)-3])
+    return serie_acumulada_10q
+
+
 def indicador_vm(ten_k: bool, price: pd.Series, df_is: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     """
     Parameters
@@ -1113,7 +1138,7 @@ def indicador_lpa_p(ten_k: bool, price: pd.Series, lpa: pd.Series, idx: list) ->
         return lpa_p_10q
     
 
-def indicador_depreciacao(ten_k: bool, df_cf: pd.Series, first_quarter: str, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
+def indicador_depreciacao(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -1141,177 +1166,132 @@ def indicador_depreciacao(ten_k: bool, df_cf: pd.Series, first_quarter: str, idx
         # Calculando a depreciação
         depreciacao = df_cf.loc['Depreciation, Depletion and Amortization']
         return depreciacao
+
     else:
-        # Calculando a depreciação 
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
+
+        # Calculando a depreciação não acumulada do 2Q e 3Q
         depreciacao_10q = df_cf.loc['Depreciation, Depletion and Amortization']
-        
-        # Calculando a depreciação não acumulado do 2Q e 3Q
         lst_depreciacao_not_accum = {}
 
         for current_idx, item in depreciacao_10q.items():
             month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando a depreciação não acumulada do mês 04 -> "mês 04" - "mês 01" 
-                    depreciacao_04 = item - (depreciacao_10q[f'1-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_04
+            if month == quarter_months[0]:
+                lst_depreciacao_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_depreciacao_not_accum[current_idx] = item - depreciacao_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_depreciacao_not_accum[current_idx] = item - depreciacao_10q[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando a depreciação não acumulada do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    depreciacao_07 = item - (depreciacao_10q[f'4-{year}'].values[0] - depreciacao_10q[f'1-{year}'].values[0]) - depreciacao_10q[f'1-{year}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_07
-
-                # Contem apenas as depreciações não acumuladas dos meses 04 e 07
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 01 nesta serie de depreciações não acumuladas
-                depreciacao_10q_jan = depreciacao_10q[depreciacao_10q.index.month == 1]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_jan] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando a depreciação não acumulada do mês 05 -> "mês 05" - "mês 02" 
-                    depreciacao_05 = item - (depreciacao_10q[f'2-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_05
-
-                if month == 8:
-                    # Calculando a depreciação não acumulada do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    depreciacao_08 = item - (depreciacao_10q[f'5-{year}'].values[0] - depreciacao_10q[f'2-{year}'].values[0]) - depreciacao_10q[f'2-{year}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_08
-
-                # Contem apenas as depreciações não acumuladas dos meses 05 e 08
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 02 nesta serie de depreciações não acumuladas
-                depreciacao_10q_feb = depreciacao_10q[depreciacao_10q.index.month == 2]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_feb] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-                # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando a depreciação não acumulada do mês 06 -> "mês 06" - "mês 03"
-                    depreciacao_06 = item - (depreciacao_10q[f'3-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_06
-
-                if month == 9:
-                    # Calculando a depreciação não acumulada do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    depreciacao_09 = item - (depreciacao_10q[f'6-{year}'].values[0] - depreciacao_10q[f'3-{year}'].values[0]) - depreciacao_10q[f'3-{year}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_09
-                        
-                # Contem apenas as depreciações não acumuladas dos meses 06 e 09
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 03 nesta serie de depreciações não acumuladas
-                depreciacao_10q_mar = depreciacao_10q[depreciacao_10q.index.month == 3]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_mar] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando a depreciação não acumulada do mês 07 -> "mês 07" - "mês 04" 
-                    depreciacao_07 = item - (depreciacao_10q[f'4-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_07
-
-                if month == 10:
-                    # Calculando a depreciação não acumulada do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    depreciacao_10 = item - (depreciacao_10q[f'7-{year}'].values[0] - depreciacao_10q[f'4-{year}'].values[0]) - depreciacao_10q[f'4-{year}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_10
-
-                # Contem apenas as depreciações não acumuladas dos meses 07 e 10
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 04 nesta serie de depreciações não acumuladas
-                depreciacao_10q_apr = depreciacao_10q[depreciacao_10q.index.month == 4]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_apr] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando a depreciação não acumulada do mês 08, -> "mês 08" - "mês 05" 
-                    depreciacao_08 = item - (depreciacao_10q[f'5-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_08
-
-                if month == 11:
-                    # Calculando a depreciação não acumulada do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    depreciacao_11 = item - (depreciacao_10q[f'8-{year}'].values[0] - depreciacao_10q[f'5-{year}'].values[0]) - depreciacao_10q[f'5-{year}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_11
-
-                # Contem apenas as depreciações não acumuladas dos meses 08 e 11
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 05 nesta serie de depreciações não acumuladas
-                depreciacao_10q_may = depreciacao_10q[depreciacao_10q.index.month == 5]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_may] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando a depreciação não acumulada do mês 12 -> "mês 12" - "mês 09"
-                    depreciacao_12 = item - (depreciacao_10q[f'9-{year}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando a depreciação não acumulada do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    depreciacao_03 = item - (depreciacao_10q[f'12-{year_before}'].values[0] - depreciacao_10q[f'9-{year_before}'].values[0]) - depreciacao_10q[f'9-{year_before}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_03
-
-                # Contem apenas as depreciações não acumuladas dos meses 12 e 3
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 09 nesta serie de depreciações não acumuladas
-                depreciacao_10q_sep = depreciacao_10q[depreciacao_10q.index.month == 9]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_sep] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando a depreciação não acumulada do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    depreciacao_03 = item - (depreciacao_10q[f'12-{year_before}'].values[0])
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando a depreciação não acumulada do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    depreciacao_06 = item - (depreciacao_10q[f'3-{year}'].values[0] - depreciacao_10q[f'12-{year_before}'].values[0]) - depreciacao_10q[f'12-{year_before}'].values[0]
-                    lst_depreciacao_not_accum[current_idx] = depreciacao_06
-
-                # Contem apenas as depreciações não acumuladas dos meses 03 e 06
-                depreciacao_not_accum = pd.Series(lst_depreciacao_not_accum, dtype=float)
-                # Adicionando a depreciação do mês 12 nesta serie de depreciações não acumuladas
-                depreciacao_10q_dec = depreciacao_10q[depreciacao_10q.index.month == 12]
-                _parts = [s for s in [depreciacao_not_accum, depreciacao_10q_dec] if not s.empty]
-                depreciacao_not_accum_10q = pd.concat(_parts, sort=False)
-                depreciacao_not_accum_10q = depreciacao_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        depreciacao_not_accum_10q = pd.Series(lst_depreciacao_not_accum, dtype=float).sort_index(ascending=False)
 
         # Retirando os dados de 2020
         depreciacao_not_accum_10q_sliced = depreciacao_not_accum_10q[0:len(depreciacao_not_accum_10q)-3]
 
         # Calculando a depreciação acumulada
-        lst_depreciacao_accum_10q = []
-        for i in range(len(depreciacao_not_accum_10q) - 3):
-            capex_accum = depreciacao_not_accum_10q[i:i+4].sum()  
-            lst_depreciacao_accum_10q.append(capex_accum)
-        # Criando uma serie da depreciação acumulada
-        depreciacao_accum_10q = pd.Series(lst_depreciacao_accum_10q, index=idx[0:len(idx)-3])
+        depreciacao_accum_10q = indicador_acumular_series_trimestrais(depreciacao_not_accum_10q, idx)
 
         return depreciacao_not_accum_10q, depreciacao_not_accum_10q_sliced, depreciacao_accum_10q
+
+
+def indicador_sbc(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_cf: pd.DataFrame
+        DataFrame do 'cash flow statement' (fluxo de caixa).
+    first_quarter: str
+        Indicar qual é o número do 1Q da empresa.
+    idx: list
+        Lista que contém as datas que serão o index do indicador.
+
+    Returns
+    -------
+    sbc: pd.Series
+        Série pandas do indicador SBC anual.
+    sbc_not_accum_10q: pd.Series
+        Série pandas do indicador SBC trimestral não acumulado.
+    sbc_not_accum_10q_sliced: pd.Series
+        Série pandas do indicador SBC trimestral não acumulado cortado.
+    sbc_accum_10q: pd.Series
+        Série pandas do indicador SBC trimestral acumulado.
+    """
+    if ten_k:
+        # Calculando o SBC
+        sbc = df_cf.loc['Stock-based Compensation']
+        return sbc
+
+    else:
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
+
+        # Calculando o SBC não acumulado do 2Q e 3Q
+        sbc_10q = df_cf.loc['Stock-based Compensation']
+        lst_sbc_not_accum = {}
+
+        for current_idx, item in sbc_10q.items():
+            month, year = current_idx.month, current_idx.year
+
+            if month == quarter_months[0]:
+                lst_sbc_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_sbc_not_accum[current_idx] = item - sbc_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_sbc_not_accum[current_idx] = item - sbc_10q[f'{previous_month}-{previous_year}'].values[0]
+
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        sbc_not_accum_10q = pd.Series(lst_sbc_not_accum, dtype=float).sort_index(ascending=False)
+
+        # Retirando os dados de 2020
+        sbc_not_accum_10q_sliced = sbc_not_accum_10q[0:len(sbc_not_accum_10q)-3]
+
+        # Calculando o SBC acumulado
+        sbc_accum_10q = indicador_acumular_series_trimestrais(sbc_not_accum_10q, idx)
+
+        return sbc_not_accum_10q, sbc_not_accum_10q_sliced, sbc_accum_10q
 
 
 def indicador_ebitda(ten_k: bool, df_is: pd.DataFrame, idx: list, depreciacao: pd.Series) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
@@ -1394,6 +1374,106 @@ def indicador_ml(ten_k: bool, df_is: pd.DataFrame) -> pd.Series:
         return m_liq_10q
 
     
+def indicador_mb(ten_k: bool, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
+
+    Returns
+    -------
+    m_bruta: pd.Series
+        Série pandas do indicador margem bruta.
+    m_bruta_10q: pd.Series
+        Série pandas do indicador margem bruta trimestral.
+    """
+    # Evita divisão por zero ou receita negativa
+    revenues_adjusted = df_is.loc['Revenues'].copy()
+    revenues_adjusted[revenues_adjusted <= 0] = np.nan
+
+    if ten_k:
+        # Calculando a margem bruta
+        m_bruta = np.round((df_is.loc['Gross Profit'] / revenues_adjusted) * 100, 2).fillna(0)
+        return m_bruta
+
+    else:
+        # Calculando a margem bruta
+        m_bruta_10q = np.round((df_is.loc['Gross Profit'] / revenues_adjusted) * 100, 2).fillna(0)
+        # Retirando os dados de 2020
+        m_bruta_10q = m_bruta_10q[0:len(m_bruta_10q)-3]
+        return m_bruta_10q
+
+
+def indicador_mo(ten_k: bool, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
+
+    Returns
+    -------
+    m_operacional: pd.Series
+        Série pandas do indicador margem operacional.
+    m_operacional_10q: pd.Series
+        Série pandas do indicador margem operacional trimestral.
+    """
+    # Evita divisão por zero ou receita negativa
+    revenues_adjusted = df_is.loc['Revenues'].copy()
+    revenues_adjusted[revenues_adjusted <= 0] = np.nan
+
+    if ten_k:
+        # Calculando a margem operacional
+        m_operacional = np.round((df_is.loc['Operating Income'] / revenues_adjusted) * 100, 2).fillna(0)
+        return m_operacional
+
+    else:
+        # Calculando a margem operacional
+        m_operacional_10q = np.round((df_is.loc['Operating Income'] / revenues_adjusted) * 100, 2).fillna(0)
+        # Retirando os dados de 2020
+        m_operacional_10q = m_operacional_10q[0:len(m_operacional_10q)-3]
+        return m_operacional_10q
+
+
+def indicador_me(ten_k: bool, ebitda: pd.Series, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    ebitda: pd.Series
+        Série pandas do indicador EBITDA.
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
+
+    Returns
+    -------
+    m_ebitda: pd.Series
+        Série pandas do indicador margem EBITDA.
+    m_ebitda_10q: pd.Series
+        Série pandas do indicador margem EBITDA trimestral.
+    """
+    # Evita divisão por zero ou receita negativa
+    revenues_adjusted = df_is.loc['Revenues'].copy()
+    revenues_adjusted[revenues_adjusted <= 0] = np.nan
+
+    if ten_k:
+        # Calculando a margem EBITDA
+        m_ebitda = np.round((ebitda / revenues_adjusted) * 100, 2).fillna(0)
+        return m_ebitda
+
+    else:
+        # Calculando a margem EBITDA e retirando os dados de 2020
+        revenues_adjusted_10q = revenues_adjusted[0:len(revenues_adjusted)-3]
+        m_ebitda_10q = np.round((ebitda.loc[revenues_adjusted_10q.index] / revenues_adjusted_10q) * 100, 2).fillna(0)
+        return m_ebitda_10q
+
+
 def indicador_vpa(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
     """
     Parameters
@@ -1768,7 +1848,7 @@ def indicador_roic(ten_k:bool, df_is: pd.Series, df_bs: pd.Series, div_bruta: pd
         return roic_10q
 
 
-def indicador_fco(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Series:
+def indicador_fco(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, idx: list | None = None) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -1778,185 +1858,72 @@ def indicador_fco(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Serie
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
         Indicar qual é o número do 1Q da empresa.
+    idx: list, optional
+        Datas que serão o index do indicador acumulado. Usa o index da série não acumulada quando omitido.
 
     Returns
     -------
     fco: pd.Series
         Série pandas do indicador fco.
-    fco_10q: pd.Series
-        Série pandas do indicador fco trimestral.
+    fco_not_accum_10q: pd.Series
+        Série pandas do indicador FCO trimestral não acumulado.
+    fco_not_accum_10q_sliced: pd.Series
+        Série pandas do indicador FCO trimestral não acumulado cortado.
+    fco_accum_10q: pd.Series
+        Série pandas do indicador FCO trimestral acumulado.
     """
     if ten_k:
         # Calculando o FCO
         fco = df_cf.loc['Net Cash Provided by (Used in) Operating Activities']
         return fco
+
     else:
-        # Calculando o FCO e retirando os dados de 2020
-        fco_10q = df_cf.loc['Net Cash Provided by (Used in) Operating Activities'][0:len(df_cf.columns)-3]
-        
+        # Calculando o FCO trimestral acumulado do fluxo de caixa
+        fco_10q = df_cf.loc['Net Cash Provided by (Used in) Operating Activities']
+
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
+
         # Calculando o FCO não acumulado do 2Q e 3Q
         lst_fco_not_accum = {}
 
-        for idx, item in fco_10q.items():
-            month, year = idx.month, idx.year
+        for current_idx, item in fco_10q.items():
+            month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o FCO não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    fco_04 = item - (fco_10q[f'1-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_04
+            if month == quarter_months[0]:
+                lst_fco_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_fco_not_accum[current_idx] = item - fco_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_fco_not_accum[current_idx] = item - fco_10q[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o FCO não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    fco_07 = item - (fco_10q[f'4-{year}'].values[0] - fco_10q[f'1-{year}'].values[0]) - fco_10q[f'1-{year}'].values[0]
-                    lst_fco_not_accum[idx] = fco_07
-
-                # Contem apenas os FCOs não acumulados dos meses 04 e 07
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 01 nesta serie de FCOs não acumulados
-                fco_10q_jan = fco_10q[fco_10q.index.month == 1]
-                _parts = [s for s in [fco_not_accum, fco_10q_jan] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o FCO não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    fco_05 = item - (fco_10q[f'2-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_05
-
-                if month == 8:
-                    # Calculando o FCO não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    fco_08 = item - (fco_10q[f'5-{year}'].values[0] - fco_10q[f'2-{year}'].values[0]) - fco_10q[f'2-{year}'].values[0]
-                    lst_fco_not_accum[idx] = fco_08
-
-                # Contem apenas os FCOs não acumulados dos meses 05 e 08
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 02 nesta serie de FCOs não acumulados
-                fco_10q_feb = fco_10q[fco_10q.index.month == 2]
-                _parts = [s for s in [fco_not_accum, fco_10q_feb] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-                # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o FCO não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    fco_06 = item - (fco_10q[f'3-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_06
-
-                if month == 9:
-                    # Calculando o FCO não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    fco_09 = item - (fco_10q[f'6-{year}'].values[0] - fco_10q[f'3-{year}'].values[0]) - fco_10q[f'3-{year}'].values[0]
-                    lst_fco_not_accum[idx] = fco_09
-                    
-                # Contem apenas os FCOs não acumulados dos meses 06 e 09
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 03 nesta serie de FCOs não acumulados
-                fco_10q_mar = fco_10q[fco_10q.index.month == 3]
-                _parts = [s for s in [fco_not_accum, fco_10q_mar] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o FCO não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    fco_07 = item - (fco_10q[f'4-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_07
-
-                if month == 10:
-                    # Calculando o FCO não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    fco_10 = item - (fco_10q[f'7-{year}'].values[0] - fco_10q[f'4-{year}'].values[0]) - fco_10q[f'4-{year}'].values[0]
-                    lst_fco_not_accum[idx] = fco_10
-
-                # Contem apenas os FCOs não acumulados dos meses 07 e 10
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 04 nesta serie de FCOs não acumulados
-                fco_10q_apr = fco_10q[fco_10q.index.month == 4]
-                _parts = [s for s in [fco_not_accum, fco_10q_apr] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o FCO não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    fco_08 = item - (fco_10q[f'5-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_08
-
-                if month == 11:
-                    # Calculando o FCO não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    fco_11 = item - (fco_10q[f'8-{year}'].values[0] - fco_10q[f'5-{year}'].values[0]) - fco_10q[f'5-{year}'].values[0]
-                    lst_fco_not_accum[idx] = fco_11
-
-                # Contem apenas os FCOs não acumulados dos meses 08 e 11
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 05 nesta serie de FCOs não acumulados
-                fco_10q_may = fco_10q[fco_10q.index.month == 5]
-                _parts = [s for s in [fco_not_accum, fco_10q_may] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o FCO não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    fco_12 = item - (fco_10q[f'9-{year}'].values[0])
-                    lst_fco_not_accum[idx] = fco_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-                    # Calculando o FCO não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    fco_03 = item - (fco_10q[f'12-{year_before}'].values[0] - fco_10q[f'9-{year_before}'].values[0]) - fco_10q[f'9-{year_before}'].values[0]
-                    lst_fco_not_accum[idx] = fco_03
-
-                # Contem apenas os FCO não acumulados dos meses 12 e 3
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 09 nesta serie de FCO não acumulados
-                fco_10q_sep = fco_10q[fco_10q.index.month == 9]
-                _parts = [s for s in [fco_not_accum, fco_10q_sep] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12': 
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCO não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    fco_03 = item - (fco_10q[f'12-{year_before}'].values[0])
-                    lst_fco_not_accum[idx] = fco_03
-
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCO não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    fco_06 = item - (fco_10q[f'3-{year}'].values[0] - fco_10q[f'12-{year_before}'].values[0]) - fco_10q[f'12-{year_before}'].values[0]
-                    lst_fco_not_accum[idx] = fco_06
-
-                # Contem apenas os FCOs não acumulados dos meses 03 e 06
-                fco_not_accum = pd.Series(lst_fco_not_accum, dtype=float)
-                # Adicionando o FCO do mês 12 nesta serie de FCOs não acumulados
-                fco_10q_dec = fco_10q[fco_10q.index.month == 12]
-                _parts = [s for s in [fco_not_accum, fco_10q_dec] if not s.empty]
-                fco_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fco_not_accum_10q = fco_not_accum_10q.sort_index(ascending=False)
-                
-        return fco_not_accum_10q
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        fco_not_accum_10q = pd.Series(lst_fco_not_accum, dtype=float).sort_index(ascending=False)
+        fco_not_accum_10q_sliced = fco_not_accum_10q[0:len(fco_not_accum_10q)-3]
+        fco_accum_10q = indicador_acumular_series_trimestrais(fco_not_accum_10q, fco_not_accum_10q.index if idx is None else idx)
+        return fco_not_accum_10q, fco_not_accum_10q_sliced, fco_accum_10q
     
 
-def indicador_fci(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Series:
+def indicador_fci(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, idx: list | None = None) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -1966,186 +1933,72 @@ def indicador_fci(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Serie
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
         Indicar qual é o número do 1Q da empresa.
+    idx: list, optional
+        Datas que serão o index do indicador acumulado. Usa o index da série não acumulada quando omitido.
 
     Returns
     -------
     fci: pd.Series
         Série pandas do indicador fci.
-    fci_10q: pd.Series
-        Série pandas do indicador fci trimestral.
+    fci_not_accum_10q: pd.Series
+        Série pandas do indicador FCI trimestral não acumulado.
+    fci_not_accum_10q_sliced: pd.Series
+        Série pandas do indicador FCI trimestral não acumulado cortado.
+    fci_accum_10q: pd.Series
+        Série pandas do indicador FCI trimestral acumulado.
     """
     if ten_k:
         # Calculando o FCI
         fci = df_cf.loc['Net Cash Provided by (Used in) Investing Activities']
         return fci
+
     else:
-        # Calculando o FCI e retirando os dados de 2020
-        fci_10q = df_cf.loc['Net Cash Provided by (Used in) Investing Activities'][0:len(df_cf.columns)-3]
+        # Calculando o FCI trimestral acumulado do fluxo de caixa
+        fci_10q = df_cf.loc['Net Cash Provided by (Used in) Investing Activities']
+
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
 
         # Calculando o FCI não acumulado do 2Q e 3Q
         lst_fci_not_accum = {}
 
-        for idx, item in fci_10q.items():
-            month, year = idx.month, idx.year
+        for current_idx, item in fci_10q.items():
+            month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o FCI não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    fci_04 = item - (fci_10q[f'1-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_04
+            if month == quarter_months[0]:
+                lst_fci_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_fci_not_accum[current_idx] = item - fci_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_fci_not_accum[current_idx] = item - fci_10q[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o FCI não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    fci_07 = item - (fci_10q[f'4-{year}'].values[0] - fci_10q[f'1-{year}'].values[0]) - fci_10q[f'1-{year}'].values[0]
-                    lst_fci_not_accum[idx] = fci_07
-
-                # Contem apenas os FCIs não acumulados dos meses 04 e 07
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 01 nesta serie de FCIs não acumulados
-                fci_10q_jan = fci_10q[fci_10q.index.month == 1]
-                _parts = [s for s in [fci_not_accum, fci_10q_jan] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o FCI não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    fci_05 = item - (fci_10q[f'2-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_05
-
-                if month == 8:
-                    # Calculando o FCI não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    fci_08 = item - (fci_10q[f'5-{year}'].values[0] - fci_10q[f'2-{year}'].values[0]) - fci_10q[f'2-{year}'].values[0]
-                    lst_fci_not_accum[idx] = fci_08
-
-                # Contem apenas os FCIs não acumulados dos meses 05 e 08
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 02 nesta serie de FCIs não acumulados
-                fci_10q_feb = fci_10q[fci_10q.index.month == 2]
-                _parts = [s for s in [fci_not_accum, fci_10q_feb] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o FCI não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    fci_06 = item - (fci_10q[f'3-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_06
-
-                if month == 9:
-                    # Calculando o FCI não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    fci_09 = item - (fci_10q[f'6-{year}'].values[0] - fci_10q[f'3-{year}'].values[0]) - fci_10q[f'3-{year}'].values[0]
-                    lst_fci_not_accum[idx] = fci_09
-                    
-                # Contem apenas os FCIs não acumulados dos meses 06 e 09
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 03 nesta serie de FCIs não acumulados
-                fci_10q_mar = fci_10q[fci_10q.index.month == 3]
-                _parts = [s for s in [fci_not_accum, fci_10q_mar] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o FCI não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    fci_07 = item - (fci_10q[f'4-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_07
-
-                if month == 10:
-                    # Calculando o FCI não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    fci_10 = item - (fci_10q[f'7-{year}'].values[0] - fci_10q[f'4-{year}'].values[0]) - fci_10q[f'4-{year}'].values[0]
-                    lst_fci_not_accum[idx] = fci_10
-
-                # Contem apenas os FCIs não acumulados dos meses 07 e 10
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 04 nesta serie de FCIs não acumulados
-                fci_10q_apr = fci_10q[fci_10q.index.month == 4]
-                _parts = [s for s in [fci_not_accum, fci_10q_apr] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o FCI não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    fci_08 = item - (fci_10q[f'5-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_08
-
-                if month == 11:
-                    # Calculando o FCI não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    fci_11 = item - (fci_10q[f'8-{year}'].values[0] - fci_10q[f'5-{year}'].values[0]) - fci_10q[f'5-{year}'].values[0]
-                    lst_fci_not_accum[idx] = fci_11
-
-                # Contem apenas os FCIs não acumulados dos meses 08 e 11
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 05 nesta serie de FCIs não acumulados
-                fci_10q_may = fci_10q[fci_10q.index.month == 5]
-                _parts = [s for s in [fci_not_accum, fci_10q_may] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o FCI não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    fci_12 = item - (fci_10q[f'9-{year}'].values[0])
-                    lst_fci_not_accum[idx] = fci_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando o FCI não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    fci_03 = item - (fci_10q[f'12-{year_before}'].values[0] - fci_10q[f'9-{year_before}'].values[0]) - fci_10q[f'9-{year_before}'].values[0]
-                    lst_fci_not_accum[idx] = fci_03
-
-                # Contem apenas os FCI não acumulados dos meses 12 e 3
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 09 nesta serie de FCI não acumulados
-                fci_10q_sep = fci_10q[fci_10q.index.month == 9]
-                _parts = [s for s in [fci_not_accum, fci_10q_sep] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12': 
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCI não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    fci_03 = item - (fci_10q[f'12-{year_before}'].values[0])
-                    lst_fci_not_accum[idx] = fci_03
-
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCI não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    fci_06 = item - (fci_10q[f'3-{year}'].values[0] - fci_10q[f'12-{year_before}'].values[0]) - fci_10q[f'12-{year_before}'].values[0]
-                    lst_fci_not_accum[idx] = fci_06
-
-                # Contem apenas os FCIs não acumulados dos meses 03 e 06
-                fci_not_accum = pd.Series(lst_fci_not_accum, dtype=float)
-                # Adicionando o FCI do mês 12 nesta serie de FCIs não acumulados
-                fci_10q_dec = fci_10q[fci_10q.index.month == 12]
-                _parts = [s for s in [fci_not_accum, fci_10q_dec] if not s.empty]
-                fci_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fci_not_accum_10q = fci_not_accum_10q.sort_index(ascending=False)
-                
-        return fci_not_accum_10q
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        fci_not_accum_10q = pd.Series(lst_fci_not_accum, dtype=float).sort_index(ascending=False)
+        fci_not_accum_10q_sliced = fci_not_accum_10q[0:len(fci_not_accum_10q)-3]
+        fci_accum_10q = indicador_acumular_series_trimestrais(fci_not_accum_10q, fci_not_accum_10q.index if idx is None else idx)
+        return fci_not_accum_10q, fci_not_accum_10q_sliced, fci_accum_10q
 
 
-def indicador_fcf(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Series:
+def indicador_fcf(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, idx: list | None = None) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -2155,186 +2008,152 @@ def indicador_fcf(ten_k: bool, df_cf: pd.Series, first_quarter: str) -> pd.Serie
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
         Indicar qual é o número do 1Q da empresa.
+    idx: list, optional
+        Datas que serão o index do indicador acumulado. Usa o index da série não acumulada quando omitido.
 
     Returns
     -------
     fcf: pd.Series
         Série pandas do indicador fcf.
-    fcf_10q: pd.Series
-        Série pandas do indicador fcf trimestral.
+    fcf_not_accum_10q: pd.Series
+        Série pandas do indicador FCF trimestral não acumulado.
+    fcf_not_accum_10q_sliced: pd.Series
+        Série pandas do indicador FCF trimestral não acumulado cortado.
+    fcf_accum_10q: pd.Series
+        Série pandas do indicador FCF trimestral acumulado.
     """
     if ten_k:
         # Calculando o FCF
         fcf = df_cf.loc['Net Cash Provided by (Used in) Financing Activities']
         return fcf
+
     else:
-        # Calculando o FCF e retirando os dados de 2020
-        fcf_10q = df_cf.loc['Net Cash Provided by (Used in) Financing Activities'][0:len(df_cf.columns)-3]
+        # Calculando o FCF trimestral acumulado do fluxo de caixa
+        fcf_10q = df_cf.loc['Net Cash Provided by (Used in) Financing Activities']
+
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
 
         # Calculando o FCF não acumulado do 2Q e 3Q
         lst_fcf_not_accum = {}
 
-        for idx, item in fcf_10q.items():
-            month, year = idx.month, idx.year
+        for current_idx, item in fcf_10q.items():
+            month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o FCF não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    fcf_04 = item - (fcf_10q[f'1-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_04
+            if month == quarter_months[0]:
+                lst_fcf_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_fcf_not_accum[current_idx] = item - fcf_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_fcf_not_accum[current_idx] = item - fcf_10q[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o FCF não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    fcf_07 = item - (fcf_10q[f'4-{year}'].values[0] - fcf_10q[f'1-{year}'].values[0]) - fcf_10q[f'1-{year}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_07
-
-                # Contem apenas os FCFs não acumulados dos meses 04 e 07
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 01 nesta serie de FCFs não acumulados
-                fcf_10q_jan = fcf_10q[fcf_10q.index.month == 1]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_jan] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o FCF não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    fcf_05 = item - (fcf_10q[f'2-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_05
-
-                if month == 8:
-                    # Calculando o FCF não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    fcf_08 = item - (fcf_10q[f'5-{year}'].values[0] - fcf_10q[f'2-{year}'].values[0]) - fcf_10q[f'2-{year}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_08
-
-                # Contem apenas os FCFs não acumulados dos meses 05 e 08
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 02 nesta serie de FCFs não acumulados
-                fcf_10q_feb = fcf_10q[fcf_10q.index.month == 2]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_feb] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o FCF não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    fcf_06 = item - (fcf_10q[f'3-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_06
-
-                if month == 9:
-                    # Calculando o FCF não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    fcf_09 = item - (fcf_10q[f'6-{year}'].values[0] - fcf_10q[f'3-{year}'].values[0]) - fcf_10q[f'3-{year}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_09
-                    
-                # Contem apenas os FCFs não acumulados dos meses 06 e 09
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 03 nesta serie de FCFs não acumulados
-                fcf_10q_mar = fcf_10q[fcf_10q.index.month == 3]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_mar] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o FCF não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    fcf_07 = item - (fcf_10q[f'4-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_07
-
-                if month == 10:
-                    # Calculando o FCF não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    fcf_10 = item - (fcf_10q[f'7-{year}'].values[0] - fcf_10q[f'4-{year}'].values[0]) - fcf_10q[f'4-{year}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_10
-
-                # Contem apenas os FCFs não acumulados dos meses 07 e 10
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 04 nesta serie de FCFs não acumulados
-                fcf_10q_apr = fcf_10q[fcf_10q.index.month == 4]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_apr] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o FCF não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    fcf_08 = item - (fcf_10q[f'5-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_08
-
-                if month == 11:
-                    # Calculando o FCF não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    fcf_11 = item - (fcf_10q[f'8-{year}'].values[0] - fcf_10q[f'5-{year}'].values[0]) - fcf_10q[f'5-{year}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_11
-
-                # Contem apenas os FCFs não acumulados dos meses 08 e 11
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 05 nesta serie de FCFs não acumulados
-                fcf_10q_may = fcf_10q[fcf_10q.index.month == 5]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_may] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o FCF não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    fcf_12 = item - (fcf_10q[f'9-{year}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando o FCF não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    fcf_03 = item - (fcf_10q[f'12-{year_before}'].values[0] - fcf_10q[f'9-{year_before}'].values[0]) - fcf_10q[f'9-{year_before}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_03
-
-                # Contem apenas os FCF não acumulados dos meses 12 e 3
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 09 nesta serie de FCF não acumulados
-                fcf_10q_sep = fcf_10q[fcf_10q.index.month == 9]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_sep] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12': 
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCF não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    fcf_03 = item - (fcf_10q[f'12-{year_before}'].values[0])
-                    lst_fcf_not_accum[idx] = fcf_03
-
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o FCF não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    fcf_06 = item - (fcf_10q[f'3-{year}'].values[0] - fcf_10q[f'12-{year_before}'].values[0]) - fcf_10q[f'12-{year_before}'].values[0]
-                    lst_fcf_not_accum[idx] = fcf_06
-
-                # Contem apenas os FCFs não acumulados dos meses 03 e 06
-                fcf_not_accum = pd.Series(lst_fcf_not_accum, dtype=float)
-                # Adicionando o FCF do mês 12 nesta serie de FCFs não acumulados
-                fcf_10q_dec = fcf_10q[fcf_10q.index.month == 12]
-                _parts = [s for s in [fcf_not_accum, fcf_10q_dec] if not s.empty]
-                fcf_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                fcf_not_accum_10q = fcf_not_accum_10q.sort_index(ascending=False)
-                
-        return fcf_not_accum_10q
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        fcf_not_accum_10q = pd.Series(lst_fcf_not_accum, dtype=float).sort_index(ascending=False)
+        fcf_not_accum_10q_sliced = fcf_not_accum_10q[0:len(fcf_not_accum_10q)-3]
+        fcf_accum_10q = indicador_acumular_series_trimestrais(fcf_not_accum_10q, fcf_not_accum_10q.index if idx is None else idx)
+        return fcf_not_accum_10q, fcf_not_accum_10q_sliced, fcf_accum_10q
 
 
-def indicador_capex(ten_k: bool, df_cf: pd.Series, first_quarter: str, lst_itens: list, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
+def indicador_capex(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, lst_itens: list, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_cf: pd.DataFrame
+        DataFrame do 'cash flow statement' (fluxo de caixa).
+    first_quarter: str
+        Indicar qual ? o n?mero do 1Q da empresa.
+    lst_itens: list
+        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o capex.
+    idx: list
+        Lista que cont?m as datas que ser?o o index do indicador.
+
+    Returns
+    -------
+    capex: pd.Series
+        S?rie pandas do indicador capex.
+    capex_not_accum_10q: pd.Series
+        S?rie pandas do indicador capex trimestral n?o acumulado.
+    capex_not_accum_10q_sliced: pd.Series
+        S?rie pandas do indicador capex trimestral n?o acumulado cortado.
+    capex_accum_10q: pd.Series
+        S?rie pandas do indicador capex trimestral acumulado.
+    """
+    # Somando os itens e usando o valor absoluto
+    capex = abs(df_cf.loc[lst_itens].sum())
+
+    if ten_k:
+        return capex
+
+    else:
+        # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+        # Calculando o capex n?o acumulado do 2Q e 3Q
+        lst_capex_not_accum = {}
+
+        for current_idx, item in capex.items():
+            month, year = current_idx.month, current_idx.year
+
+            if month == quarter_months[0]:
+                lst_capex_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_capex_not_accum[current_idx] = item - capex[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_capex_not_accum[current_idx] = item - capex[f'{previous_month}-{previous_year}'].values[0]
+
+        # Ordenando a s?rie para que o index fique igual aos outros indicadores
+        capex_not_accum_10q = pd.Series(lst_capex_not_accum, dtype=float).sort_index(ascending=False)
+
+        # Retirando os dados de 2020
+        capex_not_accum_10q_sliced = capex_not_accum_10q[0:len(capex_not_accum_10q)-3]
+
+        # Calculando o capex acumulado
+        capex_accum_10q = indicador_acumular_series_trimestrais(capex_not_accum_10q, idx)
+
+        return capex_not_accum_10q, capex_not_accum_10q_sliced, capex_accum_10q
+
+
+def indicador_outros_custos_cf(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str, lst_itens: list, idx: list) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -2345,196 +2164,73 @@ def indicador_capex(ten_k: bool, df_cf: pd.Series, first_quarter: str, lst_itens
     first_quarter: str
         Indicar qual é o número do 1Q da empresa.
     lst_itens: list
-        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o capex.
+        Lista dos itens do 'cash flow statement' que formam os outros custos.
     idx: list
         Lista que contém as datas que serão o index do indicador.
 
     Returns
     -------
-    capex: pd.Series
-        Série pandas do indicador capex.
-    capex_not_accum_10q: pd.Series
-        Série pandas do indicador capex trimestral não acumulado.
-    capex_not_accum_10q_sliced: pd.Series
-        Série pandas do indicador capex trimestral não acumulado cortado.
-    capex_accum_10q: pd.Series
-        Série pandas do indicador capex trimestral acumulado.
+    outros_custos_cf: pd.Series
+        Série pandas do indicador outros custos do fluxo de caixa anual.
+    outros_custos_cf_not_accum_10q: pd.Series
+        Série pandas do indicador trimestral não acumulado.
+    outros_custos_cf_not_accum_10q_sliced: pd.Series
+        Série pandas do indicador trimestral não acumulado cortado.
+    outros_custos_cf_accum_10q: pd.Series
+        Série pandas do indicador trimestral acumulado.
     """
-    if ten_k:
-        # Calculando o capex
-        capex = abs(df_cf.loc[lst_itens].sum())
-        return capex
-    else:
-        # Calculando o capex 
-        capex_10q = abs(df_cf.loc[lst_itens].sum())
-        
-        # Calculando o capex não acumulado do 2Q e 3Q
-        lst_capex_not_accum = {}
+    # Somando os itens e usando o valor absoluto como no indicador capex
+    outros_custos_cf = abs(df_cf.loc[lst_itens].sum())
 
-        for current_idx, item in capex_10q.items():
+    if ten_k:
+        return outros_custos_cf
+
+    else:
+        # Identificando os meses dos três trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inválido: {first_quarter}')
+
+        # Calculando os custos não acumulados do 2Q e 3Q
+        lst_outros_custos_cf_not_accum = {}
+
+        for current_idx, item in outros_custos_cf.items():
             month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o capex não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    capex_04 = item - (capex_10q[f'1-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_04
+            if month == quarter_months[0]:
+                lst_outros_custos_cf_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_outros_custos_cf_not_accum[current_idx] = item - outros_custos_cf[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_outros_custos_cf_not_accum[current_idx] = item - outros_custos_cf[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o capex não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    capex_07 = item - (capex_10q[f'4-{year}'].values[0] - capex_10q[f'1-{year}'].values[0]) - capex_10q[f'1-{year}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_07
-
-                # Contem apenas os capex não acumulados dos meses 04 e 07
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 01 nesta serie de capex não acumulados
-                capex_10q_jan = capex_10q[capex_10q.index.month == 1]
-                _parts = [s for s in [capex_not_accum, capex_10q_jan] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o capex não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    capex_05 = item - (capex_10q[f'2-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_05
-
-                if month == 8:
-                    # Calculando o capex não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    capex_08 = item - (capex_10q[f'5-{year}'].values[0] - capex_10q[f'2-{year}'].values[0]) - capex_10q[f'2-{year}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_08
-
-                # Contem apenas os capex não acumulados dos meses 05 e 08
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 02 nesta serie de capex não acumulados
-                capex_10q_feb = capex_10q[capex_10q.index.month == 2]
-                _parts = [s for s in [capex_not_accum, capex_10q_feb] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-                # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o capex não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    capex_06 = item - (capex_10q[f'3-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_06
-
-                if month == 9:
-                    # Calculando o capex não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    capex_09 = item - (capex_10q[f'6-{year}'].values[0] - capex_10q[f'3-{year}'].values[0]) - capex_10q[f'3-{year}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_09
-                        
-                # Contem apenas os capex não acumulados dos meses 06 e 09
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 03 nesta serie de capex não acumulados
-                capex_10q_mar = capex_10q[capex_10q.index.month == 3]
-                _parts = [s for s in [capex_not_accum, capex_10q_mar] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o capex não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    capex_07 = item - (capex_10q[f'4-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_07
-
-                if month == 10:
-                    # Calculando o capex não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    capex_10 = item - (capex_10q[f'7-{year}'].values[0] - capex_10q[f'4-{year}'].values[0]) - capex_10q[f'4-{year}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_10
-
-                # Contem apenas os capex não acumulados dos meses 07 e 10
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 04 nesta serie de capex não acumulados
-                capex_10q_apr = capex_10q[capex_10q.index.month == 4]
-                _parts = [s for s in [capex_not_accum, capex_10q_apr] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o capex não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    capex_08 = item - (capex_10q[f'5-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_08
-
-                if month == 11:
-                    # Calculando o capex não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    capex_11 = item - (capex_10q[f'8-{year}'].values[0] - capex_10q[f'5-{year}'].values[0]) - capex_10q[f'5-{year}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_11
-
-                # Contem apenas os capex não acumulados dos meses 08 e 11
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 05 nesta serie de capex não acumulados
-                capex_10q_may = capex_10q[capex_10q.index.month == 5]
-                _parts = [s for s in [capex_not_accum, capex_10q_may] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o capex não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    capex_12 = item - (capex_10q[f'9-{year}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando o capex não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    capex_03 = item - (capex_10q[f'12-{year_before}'].values[0] - capex_10q[f'9-{year_before}'].values[0]) - capex_10q[f'9-{year_before}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_03
-
-                # Contem apenas os capex não acumulados dos meses 12 e 3
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 09 nesta serie de capex não acumulados
-                capex_10q_sep = capex_10q[capex_10q.index.month == 9]
-                _parts = [s for s in [capex_not_accum, capex_10q_sep] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o capex não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    capex_03 = item - (capex_10q[f'12-{year_before}'].values[0])
-                    lst_capex_not_accum[current_idx] = capex_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o capex não acumulad0 do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    capex_06 = item - (capex_10q[f'3-{year}'].values[0] - capex_10q[f'12-{year_before}'].values[0]) - capex_10q[f'12-{year_before}'].values[0]
-                    lst_capex_not_accum[current_idx] = capex_06
-
-                # Contem apenas o capex não acumulados dos meses 03 e 06
-                capex_not_accum = pd.Series(lst_capex_not_accum, dtype=float)
-                # Adicionando o capex do mês 12 nesta serie de capex não acumulados
-                capex_10q_dec = capex_10q[capex_10q.index.month == 12]
-                _parts = [s for s in [capex_not_accum, capex_10q_dec] if not s.empty]
-                capex_not_accum_10q = pd.concat(_parts, sort=False)
-                capex_not_accum_10q = capex_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a série para que o index fique igual aos outros indicadores
+        outros_custos_cf_not_accum_10q = pd.Series(lst_outros_custos_cf_not_accum, dtype=float).sort_index(ascending=False)
 
         # Retirando os dados de 2020
-        capex_not_accum_10q_sliced = capex_not_accum_10q[0:len(capex_not_accum_10q)-3]
+        outros_custos_cf_not_accum_10q_sliced = outros_custos_cf_not_accum_10q[0:len(outros_custos_cf_not_accum_10q)-3]
 
-        # Calculando o capex acumulado
-        lst_capex_accum_10q = []
-        for i in range(len(capex_not_accum_10q) - 3):
-            capex_accum = capex_not_accum_10q[i:i+4].sum()  
-            lst_capex_accum_10q.append(capex_accum)
-        # Criando uma serie do capex acumulado
-        capex_accum_10q = pd.Series(lst_capex_accum_10q, index=idx[0:len(idx)-3])
+        # Calculando os custos acumulados
+        outros_custos_cf_accum_10q = indicador_acumular_series_trimestrais(outros_custos_cf_not_accum_10q, idx)
 
-        return capex_not_accum_10q, capex_not_accum_10q_sliced, capex_accum_10q
+        return outros_custos_cf_not_accum_10q, outros_custos_cf_not_accum_10q_sliced, outros_custos_cf_accum_10q
 
 
 def indicador_free_cash_flow(fco: pd.Series, capex: pd.Series) -> pd.Series:
@@ -2554,6 +2250,48 @@ def indicador_free_cash_flow(fco: pd.Series, capex: pd.Series) -> pd.Series:
     # Calculando o Free Cash Flow
     free_cash_flow = fco - capex
     return free_cash_flow
+
+
+def indicador_free_cash_flow_yield(free_cash_flow: pd.Series, vm: pd.Series) -> pd.Series:
+    """
+    Parameters
+    ----------
+    free_cash_flow: pd.Series
+        Série pandas do indicador free cash flow.
+    vm: pd.Series
+        Série pandas do valor de mercado, na mesma unidade monetária do free cash flow.
+
+    Returns
+    -------
+    free_cash_flow_yield: pd.Series
+        Série pandas do indicador free cash flow yield em porcentagem.
+    """
+    # Calculando o Free Cash Flow Yield
+    free_cash_flow_yield = ((free_cash_flow / vm) * 100).round(2)
+    return free_cash_flow_yield
+
+
+def indicador_adjusted_free_cash_flow(fco: pd.Series, capex: pd.Series, sbc: pd.Series, outros_custos_cf: pd.Series) -> pd.Series:
+    """
+    Parameters
+    ----------
+    fco: pd.Series
+        Série pandas do indicador FCO.
+    capex: pd.Series
+        Série pandas do indicador capex.
+    sbc: pd.Series
+        Série pandas do indicador SBC.
+    outros_custos_cf: pd.Series
+        Série pandas do indicador outros custos do fluxo de caixa.
+
+    Returns
+    -------
+    adjusted_free_cash_flow: pd.Series
+        Série pandas do indicador free cash flow ajustado.
+    """
+    # Calculando o Free Cash Flow ajustado
+    adjusted_free_cash_flow = fco - capex - sbc - outros_custos_cf
+    return adjusted_free_cash_flow
 
 
 def indicador_rd(ten_k: bool, df_is: pd.Series, idx: list) -> pd.Series:
@@ -2661,7 +2399,7 @@ def indicador_working_capital(ten_k: bool, df_bs: pd.Series) -> pd.Series:
         return working_capital_10q
 
 
-def indicador_change_non_cash_wc(ten_k: bool, df_cf: pd.Series, lst_itens: list, first_quarter: str) -> pd.Series|tuple[pd.Series, pd.Series]:
+def indicador_change_non_cash_wc(ten_k: bool, df_cf: pd.DataFrame, lst_itens: list, first_quarter: str, idx: list | None = None) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
     Parameters
     ----------
@@ -2670,185 +2408,76 @@ def indicador_change_non_cash_wc(ten_k: bool, df_cf: pd.Series, lst_itens: list,
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     lst_itens: list
-        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o change non cash flow.
+        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o change non cash working capital.
     first_quarter: str
-        Indicar qual é o número do 1Q da empresa.
+        Indicar qual ? o n?mero do 1Q da empresa.
+    idx: list, optional
+        Datas do indicador acumulado. Usa o index da s?rie n?o acumulada quando omitido.
 
     Returns
     -------
     change_non_cash_wc: pd.Series
-        Série pandas do indicador change non cash working capital.
+        S?rie pandas do indicador change non cash working capital anual.
     change_non_cash_wc_not_accum_10q: pd.Series
-        Série pandas do indicador change non cash working capital trimestral não acumulado.
+        S?rie pandas do indicador trimestral n?o acumulado.
     change_non_cash_wc_not_accum_10q_sliced: pd.Series
-        Série pandas do indicador change non cash working capital trimestral acumulado.
+        S?rie pandas do indicador trimestral n?o acumulado cortado.
+    change_non_cash_wc_accum_10q: pd.Series
+        S?rie pandas do indicador trimestral acumulado.
     """
+    # Somando os itens do fluxo de caixa e invertendo o sinal
+    change_non_cash_wc = df_cf.loc[lst_itens].sum() * -1
+
     if ten_k:
-        # Calculando o change non-cash working capital
-        change_non_cash_wc = df_cf.loc[lst_itens].sum() * -1
         return change_non_cash_wc
-    
+
     else:
-        # Calculando o change non-cash working capital 
-        change_non_cash_wc_10q = df_cf.loc[lst_itens].sum() * -1
-        # Calculando o change non-cash working capital não acumulado do 2Q e 3Q
+        # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+        # Calculando os valores n?o acumulados do 2Q e 3Q
         lst_change_non_cash_wc_not_accum = {}
 
-        for idx, item in change_non_cash_wc_10q.items():
-            month, year = idx.month, idx.year
+        for current_idx, item in change_non_cash_wc.items():
+            month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o change non-cash working capital não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    change_non_cash_wc_04 = item - (change_non_cash_wc_10q[f'1-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_04
+            if month == quarter_months[0]:
+                lst_change_non_cash_wc_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_change_non_cash_wc_not_accum[current_idx] = item - change_non_cash_wc[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_change_non_cash_wc_not_accum[current_idx] = item - change_non_cash_wc[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o change non-cash working capital não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    change_non_cash_wc_07 = item - (change_non_cash_wc_10q[f'4-{year}'].values[0] - change_non_cash_wc_10q[f'1-{year}'].values[0]) - change_non_cash_wc_10q[f'1-{year}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_07
-
-                # Contem apenas os change non-cash working capital não acumulados dos meses 04 e 07
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 01 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_jan = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 1]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_jan] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o change non-cash working capital não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    change_non_cash_wc_05 = item - (change_non_cash_wc_10q[f'2-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_05
-
-                if month == 8:
-                    # Calculando o change non-cash working capital não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    change_non_cash_wc_08 = item - (change_non_cash_wc_10q[f'5-{year}'].values[0] - change_non_cash_wc_10q[f'2-{year}'].values[0]) - change_non_cash_wc_10q[f'2-{year}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_08
-
-                # Contem apenas os change non-cash working capital não acumulados dos meses 05 e 08
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 02 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_feb = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 2]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_feb] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-                # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o change non-cash working capital não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    change_non_cash_wc_06 = item - (change_non_cash_wc_10q[f'3-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_06
-
-                if month == 9:
-                    # Calculando o change non-cash working capital não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    change_non_cash_wc_09 = item - (change_non_cash_wc_10q[f'6-{year}'].values[0] - change_non_cash_wc_10q[f'3-{year}'].values[0]) - change_non_cash_wc_10q[f'3-{year}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_09
-                        
-                # Contem apenas os change non-cash working capital não acumulados dos meses 06 e 09
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 03 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_mar = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 3]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_mar] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o change non-cash working capital não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    change_non_cash_wc_07 = item - (change_non_cash_wc_10q[f'4-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_07
-
-                if month == 10:
-                    # Calculando o change non-cash working capital não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    change_non_cash_wc_10 = item - (change_non_cash_wc_10q[f'7-{year}'].values[0] - change_non_cash_wc_10q[f'4-{year}'].values[0]) - change_non_cash_wc_10q[f'4-{year}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_10
-
-                # Contem apenas os change non-cash working capital não acumulados dos meses 07 e 10
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 04 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_apr = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 4]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_apr] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o change non-cash working capital não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    change_non_cash_wc_08 = item - (change_non_cash_wc_10q[f'5-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_08
-
-                if month == 11:
-                    # Calculando o change non-cash working capital não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    change_non_cash_wc_11 = item - (change_non_cash_wc_10q[f'8-{year}'].values[0] - change_non_cash_wc_10q[f'5-{year}'].values[0]) - change_non_cash_wc_10q[f'5-{year}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_11
-
-                # Contem apenas os change non-cash working capital não acumulados dos meses 08 e 11
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 05 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_may = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 5]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_may] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o change non-cash working capital não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    change_non_cash_wc_12 = item - (change_non_cash_wc_10q[f'9-{year}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando o change non-cash working capital não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    change_non_cash_wc_03 = item - (change_non_cash_wc_10q[f'12-{year_before}'].values[0] - change_non_cash_wc_10q[f'9-{year_before}'].values[0]) - change_non_cash_wc_10q[f'9-{year_before}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_03
-
-                # Contem apenas os change non-cash working capital não acumulados dos meses 12 e 3
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando os change non-cash working capital do mês 09 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_sep = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 9]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_sep] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o change non-cash working capital não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    change_non_cash_wc_03 = item - (change_non_cash_wc_10q[f'12-{year_before}'].values[0])
-                    lst_change_non_cash_wc_not_accum[idx] = change_non_cash_wc_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o change non-cash working capital não acumulad0 do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    capex_06 = item - (change_non_cash_wc_10q[f'3-{year}'].values[0] - change_non_cash_wc_10q[f'12-{year_before}'].values[0]) - change_non_cash_wc_10q[f'12-{year_before}'].values[0]
-                    lst_change_non_cash_wc_not_accum[idx] = capex_06
-
-                # Contem apenas o change non-cash working capital não acumulados dos meses 03 e 06
-                change_non_cash_wc_not_accum = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float)
-                # Adicionando o change non-cash working capital do mês 12 nesta serie de change non-cash working capital não acumulados
-                change_non_cash_wc_10q_dec = change_non_cash_wc_10q[change_non_cash_wc_10q.index.month == 12]
-                _parts = [s for s in [change_non_cash_wc_not_accum, change_non_cash_wc_10q_dec] if not s.empty]
-                change_non_cash_wc_not_accum_10q = pd.concat(_parts, sort=False)
-                change_non_cash_wc_not_accum_10q = change_non_cash_wc_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a s?rie para que o index fique igual aos outros indicadores
+        change_non_cash_wc_not_accum_10q = pd.Series(lst_change_non_cash_wc_not_accum, dtype=float).sort_index(ascending=False)
 
         # Retirando os dados de 2020
         change_non_cash_wc_not_accum_10q_sliced = change_non_cash_wc_not_accum_10q[0:len(change_non_cash_wc_not_accum_10q)-3]
-        return change_non_cash_wc_not_accum_10q, change_non_cash_wc_not_accum_10q_sliced
+
+        # Calculando a s?rie acumulada de quatro trimestres
+        accum_idx = change_non_cash_wc_not_accum_10q.index if idx is None else idx
+        change_non_cash_wc_accum_10q = indicador_acumular_series_trimestrais(change_non_cash_wc_not_accum_10q, accum_idx)
+
+        return change_non_cash_wc_not_accum_10q, change_non_cash_wc_not_accum_10q_sliced, change_non_cash_wc_accum_10q
 
 
 def indicador_reinvestment_rate(ten_k: bool, net_capex: pd.Series, change_non_cash_wc: pd.Series, df_is: pd.DataFrame, idx:list) -> pd.Series:
@@ -2902,10 +2531,10 @@ def indicador_reinvestment_rate(ten_k: bool, net_capex: pd.Series, change_non_ca
 
 
 def indicador_new_borrowing(
-    ten_k: bool, 
-    lst_itens_new_borrowing: list, 
-    df_cf: pd.DataFrame, 
-    first_quarter: str, 
+    ten_k: bool,
+    lst_itens_new_borrowing: list,
+    df_cf: pd.DataFrame,
+    first_quarter: str,
     idx: list
 ) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
@@ -2914,212 +2543,84 @@ def indicador_new_borrowing(
     ten_k: bool
         Se o arquivo for 10-K (True), se for 10-Q (False).
     lst_itens_new_borrowing: list
-        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o new borrowing.
+        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o new_borrowing.
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
-        Indicar qual é o número do 1Q da empresa.
+        Indicar qual ? o n?mero do 1Q da empresa.
     idx: list
-        Lista que contém as datas que serão o index do indicador.
+        Lista que cont?m as datas que ser?o o index do indicador.
 
     Returns
     -------
-    new borrowing: pd.Series
-        Série pandas do indicador new borrowing.
+    new_borrowing: pd.Series
+        S?rie pandas do indicador new_borrowing anual.
     new_borrowing_not_accum_10q: pd.Series
-        Série pandas do indicador new borrowing trimestral não acumulado.
+        S?rie pandas do indicador new_borrowing trimestral n?o acumulado.
     new_borrowing_not_accum_10q_sliced: pd.Series
-        Série pandas do indicador new borrowing trimestral não acumulado cortado.
+        S?rie pandas do indicador new_borrowing trimestral n?o acumulado cortado.
     new_borrowing_accum_10q: pd.Series
-        Série pandas do indicador new borrowing trimestral acumulado.
+        S?rie pandas do indicador new_borrowing trimestral acumulado.
     """
+    # Somando os valores absolutos dos itens do fluxo de caixa
+    new_borrowing = abs(df_cf.loc[lst_itens_new_borrowing]).sum()
+
     if ten_k:
-        # Calculando o new borring
-        new_borrowing = abs(df_cf.loc[lst_itens_new_borrowing]).sum()
         return new_borrowing
-    
+
     else:
-        # Calculando o new borring
-        new_borrowing_10q = abs(df_cf.loc[lst_itens_new_borrowing]).sum()
-        # Calculando o new borrowing não acumulado do 2Q e 3Q
+        # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+        # Calculando os valores n?o acumulados do 2Q e 3Q
         lst_new_borrowing_not_accum = {}
 
-        for current_idx, item in new_borrowing_10q.items():
+        for current_idx, item in new_borrowing.items():
             month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o new borrowing não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    new_borrowing_04 = item - (new_borrowing_10q[f'1-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_04
+            if month == quarter_months[0]:
+                lst_new_borrowing_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_new_borrowing_not_accum[current_idx] = item - new_borrowing[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_new_borrowing_not_accum[current_idx] = item - new_borrowing[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o new borrowing não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    new_borrowing_07 = item - (new_borrowing_10q[f'4-{year}'].values[0] - new_borrowing_10q[f'1-{year}'].values[0]) - new_borrowing_10q[f'1-{year}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_07
-
-                # Contem apenas os new borrowing não acumulados dos meses 04 e 07
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 01 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_jan = new_borrowing_10q[new_borrowing_10q.index.month == 1]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_jan] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o new borrowing não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    new_borrowing_05 = item - (new_borrowing_10q[f'2-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_05
-
-                if month == 8:
-                    # Calculando o new borrowing não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    new_borrowing_08 = item - (new_borrowing_10q[f'5-{year}'].values[0] - new_borrowing_10q[f'2-{year}'].values[0]) - new_borrowing_10q[f'2-{year}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_08
-
-                # Contem apenas os new borrowing não acumulados dos meses 05 e 08
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 02 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_feb = new_borrowing_10q[new_borrowing_10q.index.month == 2]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_feb] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-                # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o new borrowing não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    new_borrowing_06 = item - (new_borrowing_10q[f'3-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_06
-
-                if month == 9:
-                    # Calculando o new borrowing não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    new_borrowing_09 = item - (new_borrowing_10q[f'6-{year}'].values[0] - new_borrowing_10q[f'3-{year}'].values[0]) - new_borrowing_10q[f'3-{year}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_09
-                        
-                # Contem apenas os new borrowing não acumulados dos meses 06 e 09
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 03 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_mar = new_borrowing_10q[new_borrowing_10q.index.month == 3]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_mar] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o new borrowing não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    new_borrowing_07 = item - (new_borrowing_10q[f'4-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_07
-
-                if month == 10:
-                    # Calculando o new borrowing não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    new_borrowing_10 = item - (new_borrowing_10q[f'7-{year}'].values[0] - new_borrowing_10q[f'4-{year}'].values[0]) - new_borrowing_10q[f'4-{year}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_10
-
-                # Contem apenas os new borrowing não acumulados dos meses 07 e 10
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 04 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_apr = new_borrowing_10q[new_borrowing_10q.index.month == 4]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_apr] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o new borrowing não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    new_borrowing_08 = item - (new_borrowing_10q[f'5-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_08
-
-                if month == 11:
-                    # Calculando o new borrowing não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    new_borrowing_11 = item - (new_borrowing_10q[f'8-{year}'].values[0] - new_borrowing_10q[f'5-{year}'].values[0]) - new_borrowing_10q[f'5-{year}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_11
-
-                # Contem apenas os new borrowing não acumulados dos meses 08 e 11
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 04 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_may = new_borrowing_10q[new_borrowing_10q.index.month == 5]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_may] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o new borrowing não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    new_borrowing_12 = item - (new_borrowing_10q[f'9-{year}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-
-                    # Calculando o new borrowing não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    new_borrowing_03 = item - (new_borrowing_10q[f'12-{year_before}'].values[0] - new_borrowing_10q[f'9-{year_before}'].values[0]) - new_borrowing_10q[f'9-{year_before}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_03
-
-                # Contem apenas os new borrowing não acumulados dos meses 12 e 3
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando os new borrowing do mês 09 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_sep = new_borrowing_10q[new_borrowing_10q.index.month == 9]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_sep] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o new borrowing não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    new_borrowing_03 = item - (new_borrowing_10q[f'12-{year_before}'].values[0])
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o new borrowing não acumulad0 do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    new_borrowing_06 = item - (new_borrowing_10q[f'3-{year}'].values[0] - new_borrowing_10q[f'12-{year_before}'].values[0]) - new_borrowing_10q[f'12-{year_before}'].values[0]
-                    lst_new_borrowing_not_accum[current_idx] = new_borrowing_06
-
-                # Contem apenas o new borrowing não acumulados dos meses 03 e 06
-                new_borrowing_not_accum = pd.Series(lst_new_borrowing_not_accum, dtype=float)
-                # Adicionando o new borrowing do mês 12 nesta serie de new borrowing não acumulados
-                new_borrowing_10q_dec = new_borrowing_10q[new_borrowing_10q.index.month == 12]
-                _parts = [s for s in [new_borrowing_not_accum, new_borrowing_10q_dec] if not s.empty]
-                new_borrowing_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                new_borrowing_not_accum_10q = new_borrowing_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a s?rie para que o index fique igual aos outros indicadores
+        new_borrowing_not_accum_10q = pd.Series(lst_new_borrowing_not_accum, dtype=float).sort_index(ascending=False)
 
         # Retirando os dados de 2020
         new_borrowing_not_accum_10q_sliced = new_borrowing_not_accum_10q[0:len(new_borrowing_not_accum_10q)-3]
 
-        # Calculando o new borrowing acumulado
-        lst_new_borrowing_accum_10q = []
-        for i in range(len(new_borrowing_not_accum_10q) - 3):
-            new_borrowing_accum = new_borrowing_not_accum_10q[i:i+4].sum()  
-            lst_new_borrowing_accum_10q.append(new_borrowing_accum)
-        # Criando uma serie do new borrowing acumulado
-        new_borrowing_accum_10q = pd.Series(lst_new_borrowing_accum_10q, index=idx[0:len(idx)-3])
+        # Calculando a s?rie acumulada de quatro trimestres
+        new_borrowing_accum_10q = indicador_acumular_series_trimestrais(new_borrowing_not_accum_10q, idx)
 
         return new_borrowing_not_accum_10q, new_borrowing_not_accum_10q_sliced, new_borrowing_accum_10q
-    
+
 
 def indicador_debt_paid(
-    ten_k: bool, 
-    lst_itens_debt_paid: list, 
-    df_cf: pd.DataFrame, 
-    first_quarter: str, 
+    ten_k: bool,
+    lst_itens_debt_paid: list,
+    df_cf: pd.DataFrame,
+    first_quarter: str,
     idx: list
 ) -> pd.Series|tuple[pd.Series, pd.Series, pd.Series]:
     """
@@ -3128,202 +2629,75 @@ def indicador_debt_paid(
     ten_k: bool
         Se o arquivo for 10-K (True), se for 10-Q (False).
     lst_itens_debt_paid: list
-        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o debt paid.
+        Lista dos itens do 'cash flow statement' (fluxo de caixa) que formam o debt_paid.
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
-        Indicar qual é o número do 1Q da empresa.
+        Indicar qual ? o n?mero do 1Q da empresa.
     idx: list
-        Lista que contém as datas que serão o index do indicador.
+        Lista que cont?m as datas que ser?o o index do indicador.
 
     Returns
     -------
     debt_paid: pd.Series
-        Série pandas do indicador debt paid.
+        S?rie pandas do indicador debt_paid anual.
     debt_paid_not_accum_10q: pd.Series
-        Série pandas do indicador debt paid trimestral não acumulado.
+        S?rie pandas do indicador debt_paid trimestral n?o acumulado.
     debt_paid_not_accum_10q_sliced: pd.Series
-        Série pandas do indicador debt paid trimestral não acumulado cortado.
+        S?rie pandas do indicador debt_paid trimestral n?o acumulado cortado.
     debt_paid_accum_10q: pd.Series
-        Série pandas do indicador debt paid trimestral acumulado.
+        S?rie pandas do indicador debt_paid trimestral acumulado.
     """
+    # Somando os valores absolutos dos itens do fluxo de caixa
+    debt_paid = abs(df_cf.loc[lst_itens_debt_paid]).sum()
+
     if ten_k:
-        # Calculando o debt paid
-        debt_paid = abs(df_cf.loc[lst_itens_debt_paid]).sum()
         return debt_paid
-    
+
     else:
-        # Calculando o debt paid trimestral
-        debt_paid_10q = abs(df_cf.loc[lst_itens_debt_paid]).sum()
-        # Calculando o debt paid não acumulado do 2Q e 3Q
+        # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+        # Calculando os valores n?o acumulados do 2Q e 3Q
         lst_debt_paid_not_accum = {}
 
-        for current_idx, item in debt_paid_10q.items():
+        for current_idx, item in debt_paid.items():
             month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o debt paid não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                    debt_paid_04 = item - (debt_paid_10q[f'1-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_04
+            if month == quarter_months[0]:
+                lst_debt_paid_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_debt_paid_not_accum[current_idx] = item - debt_paid[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_debt_paid_not_accum[current_idx] = item - debt_paid[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o debt paid não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                    debt_paid_07 = item - (debt_paid_10q[f'4-{year}'].values[0] - debt_paid_10q[f'1-{year}'].values[0]) - debt_paid_10q[f'1-{year}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_07
-
-                # Contem apenas os debt paid não acumulados dos meses 04 e 07
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 01 nesta serie de debt paid não acumulados
-                debt_paid_10q_jan = debt_paid_10q[debt_paid_10q.index.month == 1]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_jan] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o debt paid não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                    debt_paid_05 = item - (debt_paid_10q[f'2-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_05
-
-                if month == 8:
-                    # Calculando o debt paid não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                    debt_paid_08 = item - (debt_paid_10q[f'5-{year}'].values[0] - debt_paid_10q[f'2-{year}'].values[0]) - debt_paid_10q[f'2-{year}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_08
-
-                # Contem apenas os debt paid não acumulados dos meses 05 e 08
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 02 nesta serie de debt paid não acumulados
-                debt_paid_10q_feb = debt_paid_10q[debt_paid_10q.index.month == 2]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_feb] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o debt paid não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    debt_paid_06 = item - (debt_paid_10q[f'3-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_06
-
-                if month == 9:
-                    # Calculando o debt paid não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    debt_paid_09 = item - (debt_paid_10q[f'6-{year}'].values[0] - debt_paid_10q[f'3-{year}'].values[0]) - debt_paid_10q[f'3-{year}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_09
-                        
-                # Contem apenas os debt paid não acumulados dos meses 06 e 09
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 03 nesta serie de debt paid não acumulados
-                debt_paid_10q_mar = debt_paid_10q[debt_paid_10q.index.month == 3]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_mar] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o debt paid não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                    debt_paid_07 = item - (debt_paid_10q[f'4-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_07
-
-                if month == 10:
-                    # Calculando o debt paid não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                    debt_paid_10 = item - (debt_paid_10q[f'7-{year}'].values[0] - debt_paid_10q[f'4-{year}'].values[0]) - debt_paid_10q[f'4-{year}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_10
-
-                # Contem apenas os debt paid não acumulados dos meses 07 e 10
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 04 nesta serie de debt paid não acumulados
-                debt_paid_10q_apr = debt_paid_10q[debt_paid_10q.index.month == 4]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_apr] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o debt paid não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                    debt_paid_08 = item - (debt_paid_10q[f'5-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_08
-
-                if month == 11:
-                    # Calculando o debt paid não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                    debt_paid_11 = item - (debt_paid_10q[f'8-{year}'].values[0] - debt_paid_10q[f'5-{year}'].values[0]) - debt_paid_10q[f'5-{year}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_11
-
-                # Contem apenas os debt paid não acumulados dos meses 08 e 11
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 04 nesta serie de debt paid não acumulados
-                debt_paid_10q_may = debt_paid_10q[debt_paid_10q.index.month == 5]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_may] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o debt paid não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    debt_paid_12 = item - (debt_paid_10q[f'9-{year}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_12
-
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
-                    # Calculando o debt paid não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    debt_paid_03 = item - (debt_paid_10q[f'12-{year_before}'].values[0] - debt_paid_10q[f'9-{year_before}'].values[0]) - debt_paid_10q[f'9-{year_before}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_03
-
-                # Contem apenas os debt paid não acumulados dos meses 12 e 3
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando os debt paid do mês 09 nesta serie de debt paid não acumulados
-                debt_paid_10q_sep = debt_paid_10q[debt_paid_10q.index.month == 9]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_sep] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
-
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o debt paid não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    debt_paid_03 = item - (debt_paid_10q[f'12-{year_before}'].values[0])
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
-                    # Calculando o debt paid não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    debt_paid_06 = item - (debt_paid_10q[f'3-{year}'].values[0] - debt_paid_10q[f'12-{year_before}'].values[0]) - debt_paid_10q[f'12-{year_before}'].values[0]
-                    lst_debt_paid_not_accum[current_idx] = debt_paid_06
-
-                # Contem apenas o debt paid não acumulados dos meses 03 e 06
-                debt_paid_not_accum = pd.Series(lst_debt_paid_not_accum, dtype=float)
-                # Adicionando o debt paid do mês 12 nesta serie de debt paid não acumulados
-                debt_paid_10q_dec = debt_paid_10q[debt_paid_10q.index.month == 12]
-                _parts = [s for s in [debt_paid_not_accum, debt_paid_10q_dec] if not s.empty]
-                debt_paid_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                debt_paid_not_accum_10q = debt_paid_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a s?rie para que o index fique igual aos outros indicadores
+        debt_paid_not_accum_10q = pd.Series(lst_debt_paid_not_accum, dtype=float).sort_index(ascending=False)
 
         # Retirando os dados de 2020
         debt_paid_not_accum_10q_sliced = debt_paid_not_accum_10q[0:len(debt_paid_not_accum_10q)-3]
 
-        # Calculando o debt paid acumulado
-        lst_debt_paid_accum_10q = []
-        for i in range(len(debt_paid_not_accum_10q) - 3):
-            debt_paid_accum = debt_paid_not_accum_10q[i:i+4].sum()  
-            lst_debt_paid_accum_10q.append(debt_paid_accum)
-        # Criando uma serie do debt paid acumulado
-        debt_paid_accum_10q = pd.Series(lst_debt_paid_accum_10q, index=idx[0:len(idx)-3])
+        # Calculando a s?rie acumulada de quatro trimestres
+        debt_paid_accum_10q = indicador_acumular_series_trimestrais(debt_paid_not_accum_10q, idx)
 
         return debt_paid_not_accum_10q, debt_paid_not_accum_10q_sliced, debt_paid_accum_10q
 
@@ -3476,180 +2850,56 @@ def indicador_div_nao_acum(df_cf: pd.DataFrame, first_quarter: str) -> pd.Series
     """
     Parameters
     ----------
-    ten_k: bool
-        Se o arquivo for 10-K (True), se for 10-Q (False).
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
-        Indicar qual é o número do 1Q da empresa.
+        Indicar qual ? o n?mero do 1Q da empresa.
 
     Returns
     -------
     div_not_accum_10q: pd.Series
-        Série pandas do dividendo não acumulado.
+        S?rie pandas dos dividendos trimestrais n?o acumulados, sem os tr?s per?odos mais antigos.
     """
     # Transformando os valores dos dividendos em valores absolutos
     dividends_10q = abs(df_cf.loc['Payments of Dividends'][0:len(df_cf.columns)-3])
 
-    # Calculando o dividendo não acumulado do 2Q e 3Q
+    # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+    if first_quarter == '01':
+        quarter_months = (1, 4, 7)
+    elif first_quarter == '02':
+        quarter_months = (2, 5, 8)
+    elif first_quarter == '03':
+        quarter_months = (3, 6, 9)
+    elif first_quarter == '04':
+        quarter_months = (4, 7, 10)
+    elif first_quarter == '05':
+        quarter_months = (5, 8, 11)
+    elif first_quarter == '09':
+        quarter_months = (9, 12, 3)
+    elif first_quarter == '12':
+        quarter_months = (12, 3, 6)
+    else:
+        raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+    # Calculando os dividendos n?o acumulados do 2Q e 3Q
     lst_div_not_accum = {}
 
-    for idx, item in dividends_10q.items():
-        month, year = idx.month, idx.year
+    for current_idx, item in dividends_10q.items():
+        month, year = current_idx.month, current_idx.year
 
-        # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-        if first_quarter == '01': 
-            if month == 4:
-                # Calculando o dividendo não acumulado do mês 04 -> "mês 04" - "mês 01" 
-                dividends_04 = item - (dividends_10q[f'1-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_04
+        if month == quarter_months[0]:
+            lst_div_not_accum[current_idx] = item
+        elif month == quarter_months[1]:
+            previous_month = quarter_months[0]
+            previous_year = year - (previous_month > month)
+            lst_div_not_accum[current_idx] = item - dividends_10q[f'{previous_month}-{previous_year}'].values[0]
+        elif month == quarter_months[2]:
+            previous_month = quarter_months[1]
+            previous_year = year - (previous_month > month)
+            lst_div_not_accum[current_idx] = item - dividends_10q[f'{previous_month}-{previous_year}'].values[0]
 
-            if month == 7:
-                # Calculando o dividendo não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"        
-                dividends_07 = item - (dividends_10q[f'4-{year}'].values[0] - dividends_10q[f'1-{year}'].values[0]) - dividends_10q[f'1-{year}'].values[0]
-                lst_div_not_accum[idx] = dividends_07
-
-            # Contem apenas os dividendos não acumulados dos meses 04 e 07
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 01 nesta serie de dividendos não acumulados
-            dividends_10q_jan = dividends_10q[dividends_10q.index.month == 1]
-            _parts = [s for s in [div_not_accum, dividends_10q_jan] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-        if first_quarter == '02': 
-            if month == 5:
-                # Calculando o dividendo não acumulado do mês 05 -> "mês 05" - "mês 02" 
-                dividends_05 = item - (dividends_10q[f'2-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_05
-
-            if month == 8:
-                # Calculando o dividendo não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"        
-                dividends_08 = item - (dividends_10q[f'5-{year}'].values[0] - dividends_10q[f'2-{year}'].values[0]) - dividends_10q[f'2-{year}'].values[0]
-                lst_div_not_accum[idx] = dividends_08
-
-            # Contem apenas os dividendos não acumulados dos meses 05 e 08
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 02 nesta serie de dividendos não acumulados
-            dividends_10q_feb = dividends_10q[dividends_10q.index.month == 2]
-            _parts = [s for s in [div_not_accum, dividends_10q_feb] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-        if first_quarter == '03': 
-            if month == 6:
-                # Calculando o dividendo não acumulado do mês 06 -> "mês 06" - "mês 03" 
-                dividends_06 = item - (dividends_10q[f'3-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_06
-
-            if month == 9:
-                # Calculando o dividendo não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"        
-                dividends_09 = item - (dividends_10q[f'6-{year}'].values[0] - dividends_10q[f'3-{year}'].values[0]) - dividends_10q[f'3-{year}'].values[0]
-                lst_div_not_accum[idx] = dividends_09
-
-            # Contem apenas os dividendos não acumulados dos meses 06 e 09
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 03 nesta serie de dividendos não acumulados
-            dividends_10q_mar = dividends_10q[dividends_10q.index.month == 3]
-            _parts = [s for s in [div_not_accum, dividends_10q_mar] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-        if first_quarter == '04': 
-            if month == 7:
-                # Calculando o dividendo não acumulado do mês 07 -> "mês 07" - "mês 04" 
-                dividends_07 = item - (dividends_10q[f'4-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_07
-
-            if month == 10:
-                # Calculando o dividendo não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"        
-                dividends_10 = item - (dividends_10q[f'7-{year}'].values[0] - dividends_10q[f'4-{year}'].values[0]) - dividends_10q[f'4-{year}'].values[0]
-                lst_div_not_accum[idx] = dividends_10
-
-            # Contem apenas os dividendos não acumulados dos meses 07 e 10
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 04 nesta serie de dividendos não acumulados
-            dividends_10q_apr = dividends_10q[dividends_10q.index.month == 4]
-            _parts = [s for s in [div_not_accum, dividends_10q_apr] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-        if first_quarter == '05': 
-            if month == 8:
-                # Calculando o dividendo não acumulado do mês 08 -> "mês 08" - "mês 05" 
-                dividends_08 = item - (dividends_10q[f'5-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_08
-
-            if month == 11:
-                # Calculando o dividendo não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"        
-                dividends_11 = item - (dividends_10q[f'8-{year}'].values[0] - dividends_10q[f'5-{year}'].values[0]) - dividends_10q[f'5-{year}'].values[0]
-                lst_div_not_accum[idx] = dividends_11
-
-            # Contem apenas os dividendos não acumulados dos meses 08 e 11
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 04 nesta serie de dividendos não acumulados
-            dividends_10q_may = dividends_10q[dividends_10q.index.month == 5]
-            _parts = [s for s in [div_not_accum, dividends_10q_may] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-        if first_quarter == '09':
-            if month == 12:
-                # Calculando o dividendo não acumulado do mês 12 -> "mês 12" - "mês 09"
-                dividends_12 = item - (dividends_10q[f'9-{year}'].values[0])
-                lst_div_not_accum[idx] = dividends_12
-
-            if month == 3:
-                # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                year_before = year - 1 
-                # Calculando o dividendo não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                dividends_03 = item - (dividends_10q[f'12-{year_before}'].values[0] - dividends_10q[f'9-{year_before}'].values[0]) - dividends_10q[f'9-{year_before}'].values[0]
-                lst_div_not_accum[idx] = dividends_03
-
-            # Contem apenas os dividendos não acumulados dos meses 12 e 3
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando os dividendos do mês 09 nesta serie de dividendos não acumulados
-            dividends_10q_sep = dividends_10q[dividends_10q.index.month == 9]
-            _parts = [s for s in [div_not_accum, dividends_10q_sep] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
-        # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-        if first_quarter == '12':
-            if month == 3:
-                # Calculando o ano anterior, porque o 1Q é o mês 12
-                year_before = year - 1
-                # Calculando o dividendo não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                dividends_03 = item - (dividends_10q[f'12-{year_before}'].values[0])
-                lst_div_not_accum[idx] = dividends_03
-    
-            if month == 6:
-                # Calculando o ano anterior, porque o 1Q é o mês 12
-                year_before = year - 1
-                # Calculando o dividendo não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                dividends_06 = item - (dividends_10q[f'3-{year}'].values[0] - dividends_10q[f'12-{year_before}'].values[0]) - dividends_10q[f'12-{year_before}'].values[0]
-                lst_div_not_accum[idx] = dividends_06
-
-            # Contem apenas os dividendos não acumulados dos meses 03 e 06
-            div_not_accum = pd.Series(lst_div_not_accum, dtype=float)
-            # Adicionando o dividendo do mês 12 nesta serie de dividendos não acumulados
-            dividends_10q_dec = dividends_10q[dividends_10q.index.month == 12]
-            _parts = [s for s in [div_not_accum, dividends_10q_dec] if not s.empty]
-            div_not_accum_10q = pd.concat(_parts, sort=False)
-            # Ordenando a serie para que o index fique igual aos outros indicadores
-            div_not_accum_10q = div_not_accum_10q.sort_index(ascending=False)
-
+    # Ordenando a s?rie para que o index fique igual aos outros indicadores
+    div_not_accum_10q = pd.Series(lst_div_not_accum, dtype=float).sort_index(ascending=False)
     return div_not_accum_10q
 
 
@@ -3741,7 +2991,7 @@ def indicador_payout(ten_k: bool, df_cf: pd.Series, df_is: pd.Series, div_nao_ac
         return payout_10q
 
 
-def indicador_buyback(ten_k: bool, df_cf: pd.Series, first_quarter:str) -> pd.Series:
+def indicador_buyback(ten_k: bool, df_cf: pd.DataFrame, first_quarter: str) -> pd.Series:
     """
     Parameters
     ----------
@@ -3750,184 +3000,322 @@ def indicador_buyback(ten_k: bool, df_cf: pd.Series, first_quarter:str) -> pd.Se
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
-        Indicar qual é o número do 1Q da empresa.
+        Indicar qual ? o n?mero do 1Q da empresa.
 
     Returns
     -------
     buyback: pd.Series
-        Série pandas do indicador buyback.
+        S?rie pandas do indicador buyback anual.
     buyback_not_accum_10q: pd.Series
-        Série pandas do indicador buyback trimestral.
+        S?rie pandas do indicador buyback trimestral n?o acumulado, sem os tr?s per?odos mais antigos.
     """
     if ten_k:
-        # Calculando o buyback
+        # Calculando o buyback anual
         buyback = abs(df_cf.loc['Payments for Repurchase of Common Stock'])
         return buyback
+
     else:
-        # Calculando o buyback
+        # Transformando os valores trimestrais em valores absolutos
         buyback_10q = abs(df_cf.loc['Payments for Repurchase of Common Stock'][0:len(df_cf.columns)-3])
-        # Calculando o buyback não acumulado do 2Q e 3Q 
+
+        # Identificando os meses dos tr?s trimestres de acordo com o 1Q
+        if first_quarter == '01':
+            quarter_months = (1, 4, 7)
+        elif first_quarter == '02':
+            quarter_months = (2, 5, 8)
+        elif first_quarter == '03':
+            quarter_months = (3, 6, 9)
+        elif first_quarter == '04':
+            quarter_months = (4, 7, 10)
+        elif first_quarter == '05':
+            quarter_months = (5, 8, 11)
+        elif first_quarter == '09':
+            quarter_months = (9, 12, 3)
+        elif first_quarter == '12':
+            quarter_months = (12, 3, 6)
+        else:
+            raise ValueError(f'first_quarter inv?lido: {first_quarter}')
+
+        # Calculando o buyback n?o acumulado do 2Q e 3Q
         lst_buyback_not_accum = {}
-        lst_months_buyback = []
 
-        for idx, item in buyback_10q.items():
-            month, year = idx.month, idx.year
-            lst_months_buyback.append(month)
+        for current_idx, item in buyback_10q.items():
+            month, year = current_idx.month, current_idx.year
 
-            # Condição para as empresas que fazem o lançamento nos meses 01, 04 e 07
-            if first_quarter == '01': 
-                if month == 4:
-                    # Calculando o buyback não acumulado do mês 04 -> "mês 04" - "mês 01"
-                    buyback_04 = item - (buyback_10q[f'1-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_04
+            if month == quarter_months[0]:
+                lst_buyback_not_accum[current_idx] = item
+            elif month == quarter_months[1]:
+                previous_month = quarter_months[0]
+                previous_year = year - (previous_month > month)
+                lst_buyback_not_accum[current_idx] = item - buyback_10q[f'{previous_month}-{previous_year}'].values[0]
+            elif month == quarter_months[2]:
+                previous_month = quarter_months[1]
+                previous_year = year - (previous_month > month)
+                lst_buyback_not_accum[current_idx] = item - buyback_10q[f'{previous_month}-{previous_year}'].values[0]
 
-                if month == 7:
-                    # Calculando o buyback não acumulado do mês 07 -> "mês 07" - ("mês 04" - "mês 01") - "mês 01"
-                    buyback_07 = item - (buyback_10q[f'4-{year}'].values[0] - buyback_10q[f'1-{year}'].values[0]) - buyback_10q[f'1-{year}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_07
-                    
-                # Contem apenas os buybacks não acumulados dos meses 04 e 07
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 01 nesta serie de buybacks não acumulados
-                buyback_10q_jan = buyback_10q[buyback_10q.index.month == 1]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_jan] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+        # Ordenando a s?rie para que o index fique igual aos outros indicadores
+        buyback_not_accum_10q = pd.Series(lst_buyback_not_accum, dtype=float).sort_index(ascending=False)
+        return buyback_not_accum_10q
 
-            # Condição para as empresas que fazem o lançamento nos meses 02, 05 e 08
-            if first_quarter == '02': 
-                if month == 5:
-                    # Calculando o buyback não acumulado do mês 05 -> "mês 05" - "mês 02"
-                    buyback_05 = item - (buyback_10q[f'2-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_05
 
-                if month == 8:
-                    # Calculando o buyback não acumulado do mês 08 -> "mês 08" - ("mês 05" - "mês 02") - "mês 02"
-                    buyback_08 = item - (buyback_10q[f'5-{year}'].values[0] - buyback_10q[f'2-{year}'].values[0]) - buyback_10q[f'2-{year}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_08
-                    
-                # Contem apenas os buybacks não acumulados dos meses 05 e 08
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 02 nesta serie de buybacks não acumulados
-                buyback_10q_feb = buyback_10q[buyback_10q.index.month == 2]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_feb] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+# Funções de indicadores de fraude
+def indicador_dso(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_bs: pd.DataFrame
+        DataFrame do 'balance sheet' (balanço patrimonial).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
 
-            # Condição para as empresas que fazem o lançamento nos meses 03, 06 e 09
-            if first_quarter == '03': 
-                if month == 6:
-                    # Calculando o buyback não acumulado do mês 06 -> "mês 06" - "mês 03"
-                    buyback_06 = item - (buyback_10q[f'3-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_06
+    Returns
+    -------
+    dso: pd.Series
+        Série pandas do indicador DSO anual.
+    dso_10q: pd.Series
+        Série pandas do indicador DSO trimestral.
+    """
+    if ten_k:
+        # Calculando o DSO
+        dso = (df_bs.loc['Accounts Receivable'] / df_is.loc['Revenues']) * 365
+        return dso
 
-                if month == 9:
-                    # Calculando o buyback não acumulado do mês 09 -> "mês 09" - ("mês 06" - "mês 03") - "mês 03"
-                    buyback_09 = item - (buyback_10q[f'6-{year}'].values[0] - buyback_10q[f'3-{year}'].values[0]) - buyback_10q[f'3-{year}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_09
-                    
-                # Contem apenas os buybacks não acumulados dos meses 06 e 09
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 03 nesta serie de buybacks não acumulados
-                buyback_10q_mar = buyback_10q[buyback_10q.index.month == 3]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_mar] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+    else:
+        # Calculando o DSO e retirando os dados de 2020
+        dso_10q = (df_bs.loc['Accounts Receivable'] / df_is.loc['Revenues']) * 365
+        dso_10q = dso_10q[0:len(dso_10q)-3]
+        return dso_10q
 
-            # Condição para as empresas que fazem o lançamento nos meses 04, 07 e 10
-            if first_quarter == '04': 
-                if month == 7:
-                    # Calculando o buyback não acumulado do mês 07 -> "mês 07" - "mês 04"
-                    buyback_07 = item - (buyback_10q[f'4-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_07
 
-                if month == 10:
-                    # Calculando o buyback não acumulado do mês 10 -> "mês 10" - ("mês 07" - "mês 04") - "mês 04"
-                    buyback_10 = item - (buyback_10q[f'7-{year}'].values[0] - buyback_10q[f'4-{year}'].values[0]) - buyback_10q[f'4-{year}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_10
+def indicador_recebiveis_receita(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_bs: pd.DataFrame
+        DataFrame do 'balance sheet' (balanço patrimonial).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
 
-                # Contem apenas os buybacks não acumulados dos meses 07 e 10
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 04 nesta serie de buybacks não acumulados
-                buyback_10q_apr = buyback_10q[buyback_10q.index.month == 4]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_apr] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+    Returns
+    -------
+    recebiveis_receita: pd.Series
+        Série pandas do indicador recebíveis / receita anual.
+    recebiveis_receita_10q: pd.Series
+        Série pandas do indicador recebíveis / receita trimestral.
+    """
+    if ten_k:
+        # Calculando a relação entre contas a receber e receita
+        recebiveis_receita = df_bs.loc['Accounts Receivable'] / df_is.loc['Revenues']
+        return recebiveis_receita
 
-            # Condição para as empresas que fazem o lançamento nos meses 05, 08 e 11
-            if first_quarter == '05': 
-                if month == 8:
-                    # Calculando o buyback não acumulado do mês 08 -> "mês 08" - "mês 05"
-                    buyback_08 = item - (buyback_10q[f'5-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_08
+    else:
+        # Calculando a relação entre contas a receber e receita e retirando os dados de 2020
+        recebiveis_receita_10q = df_bs.loc['Accounts Receivable'] / df_is.loc['Revenues']
+        recebiveis_receita_10q = recebiveis_receita_10q[0:len(recebiveis_receita_10q)-3]
+        return recebiveis_receita_10q
 
-                if month == 11:
-                    # Calculando o buyback não acumulado do mês 11 -> "mês 11" - ("mês 08" - "mês 05") - "mês 05"
-                    buyback_11 = item - (buyback_10q[f'8-{year}'].values[0] - buyback_10q[f'5-{year}'].values[0]) - buyback_10q[f'5-{year}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_11
 
-                # Contem apenas os buybacks não acumulados dos meses 07 e 10
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 05 nesta serie de buybacks não acumulados
-                buyback_10q_may = buyback_10q[buyback_10q.index.month == 5]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_may] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+def indicador_dio(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_bs: pd.DataFrame
+        DataFrame do 'balance sheet' (balanço patrimonial).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
 
-            # Condição para as empresas que fazem o lançamento nos meses 09, 12 e 03
-            if first_quarter == '09':
-                if month == 12:
-                    # Calculando o buyback não acumulado do mês 12 -> "mês 12" - "mês 09"
-                    buyback_12 = item - (buyback_10q[f'9-{year}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_12
+    Returns
+    -------
+    dio: pd.Series
+        Série pandas do indicador DIO anual.
+    dio_10q: pd.Series
+        Série pandas do indicador DIO trimestral.
+    """
+    if ten_k:
+        # Calculando o DIO
+        dio = (df_bs.loc['Inventories'] / df_is.loc['Cost of Goods Sold']) * 365
+        return dio
 
-                if month == 3:
-                    # Calculando o ano anterior, porque o mês 3 já está no próximo ano
-                    year_before = year - 1 
+    else:
+        # Calculando o DIO e retirando os dados de 2020
+        dio_10q = (df_bs.loc['Inventories'] / df_is.loc['Cost of Goods Sold']) * 365
+        dio_10q = dio_10q[0:len(dio_10q)-3]
+        return dio_10q
 
-                    # Calculando o buyback não acumulado do mês 03 -> "mês 03 do próximo ano" - ("mês 12" - "mês 09") - "mês 09"
-                    buyback_03 = item - (buyback_10q[f'12-{year_before}'].values[0] - buyback_10q[f'9-{year_before}'].values[0]) - buyback_10q[f'9-{year_before}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_03
 
-                # Contem apenas os buybacks não acumulados dos meses 12 e 3
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 09 nesta serie de buybacks não acumulados
-                buyback_10q_sep = buyback_10q[buyback_10q.index.month == 9]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_sep] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)    
+def indicador_dpo(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    df_bs: pd.DataFrame
+        DataFrame do 'balance sheet' (balanço patrimonial).
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
 
-            # Condição para as empresas que fazem o lançamento nos meses 12, 03 e 06
-            if first_quarter == '12':
-                if month == 3:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1
+    Returns
+    -------
+    dpo: pd.Series
+        Série pandas do indicador DPO anual.
+    dpo_10q: pd.Series
+        Série pandas do indicador DPO trimestral.
+    """
+    if ten_k:
+        # Calculando o DPO
+        dpo = (df_bs.loc['Accounts Payable'] / df_is.loc['Cost of Goods Sold']) * 365
+        return dpo
 
-                    # Calculando o buyback não acumulado do mês 03 -> "mês 03" - "mês 12 do ano anterior"
-                    buyback_03 = item - (buyback_10q[f'12-{year_before}'].values[0])
-                    lst_buyback_not_accum[idx] = buyback_03
-        
-                if month == 6:
-                    # Calculando o ano anterior, porque o 1Q é o mês 12
-                    year_before = year - 1 
-                    
-                    # Calculando o buyback não acumulado do mês 06 -> "mês 06" - ("mês 03" - "mês 12 do ano anterior") - "mês 12 do ano anterior"
-                    buyback_06 = item - (buyback_10q[f'03-{year}'].values[0] - buyback_10q[f'12-{year_before}'].values[0]) - buyback_10q[f'12-{year_before}'].values[0]
-                    lst_buyback_not_accum[idx] = buyback_06
+    else:
+        # Calculando o DPO e retirando os dados de 2020
+        dpo_10q = (df_bs.loc['Accounts Payable'] / df_is.loc['Cost of Goods Sold']) * 365
+        dpo_10q = dpo_10q[0:len(dpo_10q)-3]
+        return dpo_10q
 
-                # Contem apenas os buybacks não acumulados dos meses 03 e 06
-                buyback_not_accum = pd.Series(lst_buyback_not_accum, dtype=float)
-                # Adicionando os buybacks do mês 12 nesta serie de buybacks não acumulados
-                buyback_10q_dec = buyback_10q[buyback_10q.index.month == 12]
-                _parts = [s for s in [buyback_not_accum, buyback_10q_dec] if not s.empty]
-                buyback_not_accum_10q = pd.concat(_parts, sort=False)
-                # Ordenando a serie para que o index fique igual aos outros indicadores
-                buyback_not_accum_10q = buyback_not_accum_10q.sort_index(ascending=False)
+    
+def indicador_fco_ll(ten_k: bool, fco: pd.Series, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    fco: pd.Series
+        Série pandas do indicador FCO.
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
 
-    return buyback_not_accum_10q
+    Returns
+    -------
+    fco_ll: pd.Series
+        Série pandas do indicador FCO / lucro líquido anual.
+    fco_ll_10q: pd.Series
+        Série pandas do indicador FCO / lucro líquido trimestral.
+    """
+    if ten_k:
+        # Calculando o FCO / lucro líquido
+        fco_ll = fco / df_is.loc['Net Income']
+        return fco_ll
+
+    else:
+        # Calculando o FCO / lucro líquido trimestral
+        fco_ll_10q = fco / df_is.loc['Net Income'][0:len(df_is.columns)-3]
+        return fco_ll_10q
+
+
+def indicador_fco_ebitda(ten_k: bool, fco: pd.Series, ebitda: pd.Series) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    fco: pd.Series
+        Série pandas do indicador FCO.
+    ebitda: pd.Series
+        Série pandas do indicador EBITDA.
+
+    Returns
+    -------
+    fco_ebitda: pd.Series
+        Série pandas do indicador FCO / EBITDA anual.
+    fco_ebitda_10q: pd.Series
+        Série pandas do indicador FCO / EBITDA trimestral.
+    """
+    if ten_k:
+        # Calculando o FCO / EBITDA
+        fco_ebitda = fco / ebitda
+        return fco_ebitda
+
+    else:
+        # Calculando o FCO / EBITDA trimestral
+        fco_ebitda_10q = fco / ebitda.loc[fco.index]
+        return fco_ebitda_10q
+
+
+def indicador_capex_depreciacao(capex: pd.Series, depreciacao: pd.Series) -> pd.Series:
+    """
+    Parameters
+    ----------
+    capex: pd.Series
+        Série pandas do indicador capex.
+    depreciacao: pd.Series
+        Série pandas do indicador depreciação.
+
+    Returns
+    -------
+    capex_depreciacao: pd.Series
+        Série pandas do indicador capex / depreciação.
+    """
+    # Calculando o Capex / depreciação
+    capex_depreciacao = capex / depreciacao
+    return capex_depreciacao
+
+
+def indicador_fcf_ll(ten_k: bool, free_cash_flow: pd.Series, df_is: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    free_cash_flow: pd.Series
+        Série pandas do indicador free cash flow.
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
+
+    Returns
+    -------
+    fcf_ll: pd.Series
+        Série pandas do indicador free cash flow / lucro líquido anual.
+    fcf_ll_10q: pd.Series
+        Série pandas do indicador free cash flow / lucro líquido trimestral.
+    """
+    if ten_k:
+        # Calculando o Free Cash Flow / lucro líquido
+        fcf_ll = free_cash_flow / df_is.loc['Net Income']
+        return fcf_ll
+
+    else:
+        # Calculando o Free Cash Flow / lucro líquido trimestral
+        fcf_ll_10q = free_cash_flow / df_is.loc['Net Income'][0:len(df_is.columns)-3]
+        return fcf_ll_10q
+
+
+def indicador_accrual_ratio(ten_k: bool, fco: pd.Series, df_is: pd.DataFrame, df_bs: pd.DataFrame) -> pd.Series:
+    """
+    Parameters
+    ----------
+    ten_k: bool
+        Se o arquivo for 10-K (True), se for 10-Q (False).
+    fco: pd.Series
+        Série pandas do indicador FCO.
+    df_is: pd.DataFrame
+        DataFrame do 'income statement' (DRE).
+    df_bs: pd.DataFrame
+        DataFrame do 'balance sheet' (balanço patrimonial).
+
+    Returns
+    -------
+    accrual_ratio: pd.Series
+        Série pandas do indicador accrual ratio anual.
+    accrual_ratio_10q: pd.Series
+        Série pandas do indicador accrual ratio trimestral.
+    """
+    ativos = df_bs.loc['Assets']
+
+    if ten_k:
+        # Calculando a média dos ativos do ano atual e do ano anterior
+        ativos_medios = (ativos + ativos.shift(-1)) / 2
+        accrual_ratio = (df_is.loc['Net Income'] - fco) / ativos_medios
+        return accrual_ratio
+
+    else:
+        # Calculando a média dos ativos do trimestre atual e do mesmo trimestre do ano anterior
+        ativos_medios_10q = (ativos + ativos.shift(-3)) / 2
+        lucro_liquido_10q = df_is.loc['Net Income'][0:len(df_is.columns)-3]
+        accrual_ratio_10q = (lucro_liquido_10q - fco) / ativos_medios_10q[0:len(ativos_medios_10q)-3]
+        return accrual_ratio_10q
