@@ -2271,7 +2271,7 @@ def indicador_free_cash_flow_yield(free_cash_flow: pd.Series, vm: pd.Series) -> 
     return free_cash_flow_yield
 
 
-def indicador_adjusted_free_cash_flow(fco: pd.Series, capex: pd.Series, sbc: pd.Series, outros_custos_cf: pd.Series) -> pd.Series:
+def indicador_adjusted_free_cash_flow(fco: pd.Series, capex: pd.Series, sbc: pd.Series, outros_custos_cf: pd.Series | None = None) -> pd.Series:
     """
     Parameters
     ----------
@@ -2281,8 +2281,8 @@ def indicador_adjusted_free_cash_flow(fco: pd.Series, capex: pd.Series, sbc: pd.
         Série pandas do indicador capex.
     sbc: pd.Series
         Série pandas do indicador SBC.
-    outros_custos_cf: pd.Series
-        Série pandas do indicador outros custos do fluxo de caixa.
+    outros_custos_cf: pd.Series | None
+        Série pandas dos outros custos do fluxo de caixa. None indica ausência de custos.
 
     Returns
     -------
@@ -2290,7 +2290,9 @@ def indicador_adjusted_free_cash_flow(fco: pd.Series, capex: pd.Series, sbc: pd.
         Série pandas do indicador free cash flow ajustado.
     """
     # Calculando o Free Cash Flow ajustado
-    adjusted_free_cash_flow = fco - capex - sbc - outros_custos_cf
+    adjusted_free_cash_flow = fco - capex - sbc
+    if outros_custos_cf is not None:
+        adjusted_free_cash_flow = adjusted_free_cash_flow - outros_custos_cf
     return adjusted_free_cash_flow
 
 
@@ -2853,7 +2855,7 @@ def indicador_div_nao_acum(df_cf: pd.DataFrame, first_quarter: str) -> pd.Series
     df_cf: pd.DataFrame
         DataFrame do 'cash flow statement' (fluxo de caixa).
     first_quarter: str
-        Indicar qual ? o n?mero do 1Q da empresa.
+        Indicar qual o número do 1Q da empresa.
 
     Returns
     -------
@@ -2898,7 +2900,7 @@ def indicador_div_nao_acum(df_cf: pd.DataFrame, first_quarter: str) -> pd.Series
             previous_year = year - (previous_month > month)
             lst_div_not_accum[current_idx] = item - dividends_10q[f'{previous_month}-{previous_year}'].values[0]
 
-    # Ordenando a s?rie para que o index fique igual aos outros indicadores
+    # Ordenando a série para que o index fique igual aos outros indicadores
     div_not_accum_10q = pd.Series(lst_div_not_accum, dtype=float).sort_index(ascending=False)
     return div_not_accum_10q
 
