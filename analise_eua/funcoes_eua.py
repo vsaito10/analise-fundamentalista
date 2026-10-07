@@ -2267,7 +2267,7 @@ def indicador_free_cash_flow_yield(free_cash_flow: pd.Series, vm: pd.Series) -> 
         Série pandas do indicador free cash flow yield em porcentagem.
     """
     # Calculando o Free Cash Flow Yield
-    free_cash_flow_yield = ((free_cash_flow / vm) * 100).round(2)
+    free_cash_flow_yield = (((free_cash_flow * 10000) / vm) * 100).round(2)
     return free_cash_flow_yield
 
 
