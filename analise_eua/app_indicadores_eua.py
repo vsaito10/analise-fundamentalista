@@ -23,6 +23,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from curl_cffi.requests import RequestsError
+from plotly.subplots import make_subplots
 from scipy.stats import t as student_t
 from yfinance.exceptions import YFException
 
@@ -58,7 +59,7 @@ class Metrica:
 
     @property
     def unidade(self) -> str:
-        return {"usd_bi": "US$ bi", "pct": "%", "x": "x", "usd": "US$"}[self.tipo]
+        return {"usd_bi": "US$ bi", "pct": "%", "pct_decimal": "%", "x": "x", "usd": "US$", "dias": "dias"}[self.tipo]
 
 
 # Demonstrativos em US$ milhões; valor de mercado em US$ milhares.
@@ -70,6 +71,9 @@ METRICAS = {
     "lp": Metrica("L/P (earnings yield)", "pct"),
     "ebitda": Metrica("EBITDA", "usd_bi", MILHAO_PARA_BILHAO),
     "margem_liquida": Metrica("Margem líquida", "pct"),
+    "margem_bruta": Metrica("Margem bruta", "pct"),
+    "margem_operacional": Metrica("Margem operacional", "pct"),
+    "margem_ebitda": Metrica("Margem EBITDA", "pct"),
     "pvp": Metrica("P/VPA", "x"),
     "valor_mercado": Metrica("Valor de mercado", "usd_bi", MILHAR_PARA_BILHAO),
     "divida_bruta": Metrica("Dívida bruta", "usd_bi", MILHAO_PARA_BILHAO),
@@ -84,11 +88,22 @@ METRICAS = {
     "fci": Metrica("Fluxo de caixa de investimento", "usd_bi", MILHAO_PARA_BILHAO),
     "fcf": Metrica("Fluxo de caixa de financiamento", "usd_bi", MILHAO_PARA_BILHAO),
     "free_cash_flow": Metrica("Free cash flow", "usd_bi", MILHAO_PARA_BILHAO),
+    "adjusted_free_cash_flow": Metrica("Adjusted Free Cash Flow", "usd_bi", MILHAO_PARA_BILHAO),
+    "sbc": Metrica("SBC", "usd_bi", MILHAO_PARA_BILHAO),
     "capex": Metrica("Capex", "usd_bi", MILHAO_PARA_BILHAO),
     "net_capex": Metrica("Net capex", "usd_bi", MILHAO_PARA_BILHAO),
     "rd": Metrica("P&D", "usd_bi", MILHAO_PARA_BILHAO),
     "adj_net_capex": Metrica("Net capex ajustado", "usd_bi", MILHAO_PARA_BILHAO),
     "working_capital": Metrica("Capital de giro", "usd_bi", MILHAO_PARA_BILHAO),
+    "dso": Metrica("DSO", "dias"),
+    "dio": Metrica("DIO", "dias"),
+    "dpo": Metrica("DPO", "dias"),
+    "cfo_ll": Metrica("CFO/LL", "x"),
+    "cfo_ebitda": Metrica("CFO/EBITDA", "x"),
+    "accrual_ratio": Metrica("Accrual Ratio", "pct_decimal", 0.01),
+    "fcf_ll": Metrica("FCF/LL", "x"),
+    "recebiveis_receita": Metrica("Recebíveis/Receita", "pct_decimal", 0.01),
+    "capex_depreciacao": Metrica("CAPEX/Depreciação", "x"),
     "reinvestment_rate": Metrica("Taxa de reinvestimento", "pct"),
     "fcfe": Metrica("FCFE", "usd_bi", MILHAO_PARA_BILHAO),
     "fcff": Metrica("FCFF", "usd_bi", MILHAO_PARA_BILHAO),
@@ -104,12 +119,19 @@ SO_POSITIVOS = ("pl", "ev_ebitda")
 # abaixo identifica a coluna pelo conteúdo e produz nomes internos estáveis.
 COLUNAS = {
     "p/l damodaran": "pl_damodaran", "p/l": "pl", "l/p": "lp", "ebitda": "ebitda",
-    "margem liquida": "margem_liquida", "p/vpa": "pvp", "valor de mercado": "valor_mercado",
+    "margem liquida": "margem_liquida", "margem bruta": "margem_bruta",
+    "margem operacional": "margem_operacional", "margem ebitda": "margem_ebitda",
+    "p/vpa": "pvp", "valor de mercado": "valor_mercado",
     "divida bruta": "divida_bruta", "caixa e equivalentes": "caixa", "divida liquida": "divida_liquida",
     "divida liquida/ebitda": "dl_ebitda", "divida liquida/pl": "dl_pl", "ev/ebitda": "ev_ebitda",
     "roe": "roe", "roic": "roic", "fco": "fco", "fci": "fci", "fcf": "fcf",
-    "free cash flow": "free_cash_flow", "capex": "capex", "net capex": "net_capex",
+    "free cash flow": "free_cash_flow", "adjusted free cash flow": "adjusted_free_cash_flow", "sbc": "sbc",
+    "capex": "capex", "net capex": "net_capex",
     "r&d": "rd", "adj net capex": "adj_net_capex", "working capital": "working_capital",
+    "dso": "dso", "dio": "dio", "dpo": "dpo",
+    "fco/ll": "cfo_ll", "fco/ebitda": "cfo_ebitda", "accrual ratio": "accrual_ratio",
+    "free cash flow/ll": "fcf_ll", "recebiveis/receita": "recebiveis_receita",
+    "capex/depreciacao": "capex_depreciacao",
     "reinvestment rate": "reinvestment_rate", "fcfe": "fcfe", "fcff": "fcff", "buyback": "buyback",
     "dpa": "dpa", "payout": "payout",
 }
@@ -159,6 +181,22 @@ def escala(df: pd.DataFrame, coluna: str) -> pd.Series:
     return pd.to_numeric(df[coluna], errors="coerce") / METRICAS[coluna].divisor
 
 
+@st.cache_data(show_spinner=False)
+def carregar_receita(caminho: str, tipo: str, _mtime: float) -> pd.DataFrame:
+    """Carrega a receita do demonstrativo e a associa aos períodos dos indicadores."""
+    demonstrativo = pd.read_excel(caminho, sheet_name="income_statement", index_col=0)
+    linha_receita = next((indice for indice in demonstrativo.index if _chave_coluna(indice) in {"revenue", "revenues", "net revenue", "net revenues"}), None)
+    if linha_receita is None:
+        return pd.DataFrame(columns=["periodo", "receita"])
+    receita = pd.to_numeric(demonstrativo.loc[linha_receita], errors="coerce")
+    datas = pd.to_datetime(receita.index, errors="coerce")
+    if tipo == "indicators_10k":
+        periodos = datas.year.astype("Int64").astype(str)
+    else:
+        periodos = datas.year.astype("Int64").astype(str) + "T" + datas.quarter.astype("Int64").astype(str)
+    return pd.DataFrame({"periodo": periodos, "receita": receita.to_numpy()}).dropna(subset=["periodo", "receita"])
+
+
 def numero(valor: float) -> str:
     if valor is None or pd.isna(valor):
         return "—"
@@ -169,7 +207,7 @@ def fmt(valor: float, tipo: str) -> str:
     texto = numero(valor)
     if texto == "—":
         return texto
-    return {"usd_bi": f"US$ {texto} bi", "pct": f"{texto}%", "x": f"{texto}x", "usd": f"US$ {texto}"}[tipo]
+    return {"usd_bi": f"US$ {texto} bi", "pct": f"{texto}%", "pct_decimal": f"{texto}%", "x": f"{texto}x", "usd": f"US$ {texto}", "dias": f"{texto} dias"}[tipo]
 
 
 def _layout(fig: go.Figure, cores: dict, titulo: str, unidade: str, n_series: int) -> go.Figure:
@@ -204,6 +242,29 @@ def barras(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go
                              hovertemplate=f"{metrica.label}: %{{customdata}}<extra></extra>", customdata=[fmt(v, metrica.tipo) for v in valores]))
     fig.update_layout(barmode="group")
     return _layout(fig, cores, titulo, METRICAS[colunas[0]].unidade, len(colunas))
+
+
+def receita_dso(df: pd.DataFrame, receita: pd.DataFrame, cores: dict) -> go.Figure | None:
+    """Compara receita e prazo médio de recebimento, preservando as unidades de cada série."""
+    dados = df[["periodo", "dso"]].merge(receita, on="periodo", how="inner")
+    if dados.empty:
+        return None
+    valores_receita = dados["receita"] / MILHAO_PARA_BILHAO
+    valores_dso = pd.to_numeric(dados["dso"], errors="coerce")
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig.add_trace(go.Bar(
+        x=dados["periodo"], y=valores_receita, name="Receita", marker={"color": cores["serie"][0]},
+        hovertemplate="Receita: US$ %{y:,.2f} bi<extra></extra>",
+    ), secondary_y=False)
+    fig.add_trace(go.Scatter(
+        x=dados["periodo"], y=valores_dso, name="DSO", mode="lines+markers",
+        line={"color": cores["serie"][1], "width": 2}, marker={"size": 8, "color": cores["serie"][1]},
+        hovertemplate="DSO: %{y:,.2f} dias<extra></extra>",
+    ), secondary_y=True)
+    _layout(fig, cores, "Receita e DSO (contas a receber)", "US$ bi", 2)
+    fig.update_yaxes(title_text="US$ bi", secondary_y=False)
+    fig.update_yaxes(title_text="dias", secondary_y=True, showgrid=False)
+    return fig
 
 
 def bloco(df: pd.DataFrame, cores: dict, graficos: list) -> None:
@@ -397,13 +458,13 @@ def carregar_ohlc(ticker: str, periodo: str) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def carregar_precos_fechamento(tickers: tuple[str, ...], periodo: str) -> pd.DataFrame:
+def carregar_precos_fechamento(tickers: tuple[str, ...], periodo: str, auto_adjust: bool = True) -> pd.DataFrame:
     """Baixa os fechamentos ajustados dos ativos selecionados em uma unica consulta."""
     import yfinance as yf
 
     yf.cache.set_cache_location(str(Path(tempfile.gettempdir()) / "analise-fundamentalista-yfinance"))
     try:
-        dados = yf.download(list(tickers), period=periodo, interval="1d", auto_adjust=True,
+        dados = yf.download(list(tickers), period=periodo, interval="1d", auto_adjust=auto_adjust,
                             multi_level_index=False, progress=False)
     except (KeyError, RequestsError, ValueError, YFException):
         return pd.DataFrame(columns=list(tickers))
@@ -425,6 +486,56 @@ def carregar_precos_fechamento(tickers: tuple[str, ...], periodo: str) -> pd.Dat
     if isinstance(fechamento, pd.Series):
         fechamento = fechamento.to_frame(name=tickers[0])
     return fechamento.reindex(columns=list(tickers)).dropna(how="all")
+
+
+def tabela_dcf_valuation(catalogo: dict) -> pd.DataFrame:
+    """Consolida o ultimo fechamento e o DCF mais recente de cada empresa."""
+    empresas = [
+        (Path(caminho).stem.removesuffix("_indicators").upper(), setor, empresa)
+        for setor, empresas_setor in catalogo.items()
+        for empresa, caminho in empresas_setor.items()
+    ]
+    tickers = tuple(ticker for ticker, _, _ in empresas)
+    precos = carregar_precos_fechamento(tickers, "5d", auto_adjust=False) if tickers else pd.DataFrame()
+    registros = []
+    for ticker, setor_empresa, empresa in sorted(empresas):
+        preco_fechamento = (
+            pd.to_numeric(precos[ticker], errors="coerce").dropna().iloc[-1]
+            if ticker in precos and precos[ticker].notna().any() else float("nan")
+        )
+        arquivo_valuation = arquivo_valuation_mais_recente(setor_empresa, empresa)
+        valor_valuation = (
+            carregar_valuation(str(arquivo_valuation), arquivo_valuation.stat().st_mtime)
+            if arquivo_valuation is not None else None
+        )
+        variacao = (
+            (preco_fechamento / valor_valuation - 1) * 100
+            if valor_valuation is not None and valor_valuation != 0 and pd.notna(preco_fechamento)
+            else float("nan")
+        )
+        status = (
+            "Sobrevalorizada" if variacao > 0 else "Subvalorizada" if variacao < 0 else "Em linha"
+        ) if pd.notna(variacao) else "—"
+        registros.append({
+            "Ticker": ticker,
+            "Preço de fechamento": preco_fechamento,
+            "Valuation": valor_valuation,
+            "Variação": variacao,
+            "Status": status,
+            "Fonte": arquivo_valuation.name if arquivo_valuation is not None else "—",
+        })
+    return pd.DataFrame(registros)
+
+
+def cor_variacao_valuation(valor: float) -> str:
+    """Define a cor do texto conforme o sinal da variação para a tabela de DCF."""
+    if pd.isna(valor):
+        return ""
+    if valor > 0:
+        return "color: #1baf7a; font-weight: 600"
+    if valor < 0:
+        return "color: #e34948; font-weight: 600"
+    return ""
 
 
 def linhas_mercado(dados: pd.DataFrame, titulo: str, unidade: str, cores: dict,
@@ -674,7 +785,7 @@ for faixa in (destaques[:4], destaques[4:]):
             delta = None if anterior is None or pd.isna(atual) or pd.isna(anterior) else atual - anterior
             coluna_st.metric(metrica.label, fmt(atual, metrica.tipo), None if delta is None else fmt(delta, metrica.tipo), help=metrica.ajuda or None)
 
-abas = st.tabs(["Valuation", "DCF Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Explorar", "Dados", "Ranking", "Indicadores gerais"])
+abas = st.tabs(["Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Fraude", "Explorar", "Dados", "Comparação múltiplos", "Indicadores gerais", "DCF valuation", "DCF valuation tabela"])
 
 def existentes(*colunas: str) -> list[str]:
     return [coluna for coluna in colunas if coluna in disponiveis]
@@ -684,7 +795,7 @@ with abas[0]:
                        (linhas, existentes("lp"), "Earnings yield (L/P)"),
                        (barras, existentes("valor_mercado"), "Valor de mercado")])
 
-with abas[1]:
+with abas[10]:
     arquivo_valuation = arquivo_valuation_mais_recente(setor, empresa)
     st.subheader("Preço de mercado e valuation")
     if arquivo_valuation is None:
@@ -722,24 +833,63 @@ with abas[1]:
                 coluna_percentual.metric(rotulo_percentual, f"{diferenca_percentual:.2%}" if pd.notna(diferenca_percentual) else "—")
                 st.plotly_chart(candlestick(precos, ticker_acao, valor_valuation, arquivo_valuation, cores), width="stretch")
 
-with abas[2]:
+with abas[11]:
+    st.subheader("Tabela de DCF Valuation")
+    with st.spinner("Lendo valuations e preços de fechamento..."):
+        tabela_valuation = tabela_dcf_valuation(catalogo)
+    st.dataframe(
+        tabela_valuation.style.map(cor_variacao_valuation, subset=["Variação"]),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Ticker": st.column_config.TextColumn("Ticker"),
+            "Preço de fechamento": st.column_config.NumberColumn("Preço de fechamento", format="US$ %.2f"),
+            "Valuation": st.column_config.NumberColumn("Valuation", format="US$ %.2f"),
+            "Variação": st.column_config.NumberColumn("Variação", format="%.2f%%"),
+            "Status": st.column_config.TextColumn("Status"),
+            "Fonte": st.column_config.TextColumn("Fonte"),
+        },
+    )
+
+with abas[1]:
     bloco(df, cores, [(linhas, existentes("roe", "roic"), "ROE e ROIC"),
-                       (linhas, existentes("margem_liquida"), "Margem líquida"),
+                       (linhas, existentes("margem_liquida", "margem_bruta", "margem_operacional", "margem_ebitda"), "Margens"),
                        (barras, existentes("ebitda"), "EBITDA"),
                        (linhas, existentes("reinvestment_rate"), "Taxa de reinvestimento")])
-with abas[3]:
+with abas[2]:
     bloco(df, cores, [(barras, existentes("divida_bruta", "caixa", "divida_liquida"), "Dívida bruta, caixa e dívida líquida"),
                        (linhas, existentes("dl_ebitda", "dl_pl"), "Alavancagem")])
-with abas[4]:
+with abas[3]:
     bloco(df, cores, [(barras, existentes("fco", "fci", "fcf"), "Fluxos de caixa (FCO, FCI, FCF)"),
-                       (barras, existentes("free_cash_flow"), "Free cash flow"),
+                       (barras, existentes("free_cash_flow", "adjusted_free_cash_flow", "sbc"), "Free cash flow e SBC"),
                        (barras, existentes("capex", "net_capex", "rd", "adj_net_capex"), "Capex e P&D"),
                        (barras, existentes("fcfe", "fcff"), "FCFE e FCFF"),
-                       (barras, existentes("working_capital"), "Capital de giro")])
-with abas[5]:
+                       (barras, existentes("working_capital"), "Capital de giro"),
+                       (linhas, existentes("dso", "dio", "dpo"), "Prazos operacionais (DSO, DIO, DPO)")])
+with abas[4]:
     bloco(df, cores, [(barras, existentes("buyback"), "Recompra de ações"),
                        (linhas, existentes("dpa"), "Dividendos por ação"),
                        (linhas, existentes("payout"), "Payout")])
+with abas[5]:
+    bloco(df, cores, [
+        (linhas, existentes("cfo_ll", "fcf_ll"), "Qualidade dos lucros"),
+        (linhas, existentes("cfo_ebitda", "capex_depreciacao"), "Conversão de caixa e reinvestimento"),
+        (linhas, existentes("accrual_ratio", "recebiveis_receita"), "Accruals e recebíveis"),
+    ])
+    if "dso" in disponiveis:
+        sufixo_demonstrativo = tipo.removeprefix("indicators_")
+        arquivo_demonstrativo = arquivo.with_name(f"{arquivo.stem.removesuffix('_indicators')}_{sufixo_demonstrativo}.xlsx")
+        if arquivo_demonstrativo.is_file():
+            receita = carregar_receita(
+                str(arquivo_demonstrativo), tipo, arquivo_demonstrativo.stat().st_mtime
+            )
+            grafico_receita_dso = receita_dso(df, receita, cores)
+            if grafico_receita_dso is not None:
+                st.plotly_chart(grafico_receita_dso, width="stretch")
+            else:
+                st.info("Não há períodos em comum entre Receita e DSO.")
+        else:
+            st.info("O demonstrativo de resultados necessário para comparar Receita e DSO não foi encontrado.")
 with abas[6]:
     escolhidos = st.multiselect("Indicadores (combine somente indicadores da mesma unidade)", options=disponiveis, default=disponiveis[:1], format_func=lambda c: f"{METRICAS[c].label} ({METRICAS[c].unidade})")
     unidades = {METRICAS[c].unidade for c in escolhidos}
