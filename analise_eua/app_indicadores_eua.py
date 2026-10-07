@@ -88,6 +88,7 @@ METRICAS = {
     "fci": Metrica("Fluxo de caixa de investimento", "usd_bi", MILHAO_PARA_BILHAO),
     "fcf": Metrica("Fluxo de caixa de financiamento", "usd_bi", MILHAO_PARA_BILHAO),
     "free_cash_flow": Metrica("Free cash flow", "usd_bi", MILHAO_PARA_BILHAO),
+    "free_cash_flow_yield": Metrica("Free cash flow yield", "pct"),
     "adjusted_free_cash_flow": Metrica("Adjusted Free Cash Flow", "usd_bi", MILHAO_PARA_BILHAO),
     "sbc": Metrica("SBC", "usd_bi", MILHAO_PARA_BILHAO),
     "capex": Metrica("Capex", "usd_bi", MILHAO_PARA_BILHAO),
@@ -112,7 +113,12 @@ METRICAS = {
     "payout": Metrica("Payout", "pct"),
 }
 
-RANKING = {"lp": "maior", "pl": "menor", "ev_ebitda": "menor", "roe": "maior", "roic": "maior", "dl_ebitda": "menor", "dl_pl": "menor"}
+RANKING = {
+    "lp": "maior", "pl": "menor", "ev_ebitda": "menor", "roe": "maior", "roic": "maior",
+    "fco": "maior", "free_cash_flow": "maior", "adjusted_free_cash_flow": "maior", "free_cash_flow_yield": "maior",
+    "dpa": "maior", "buyback": "maior",
+    "dl_ebitda": "menor", "dl_pl": "menor",
+}
 SO_POSITIVOS = ("pl", "ev_ebitda")
 
 # Alguns arquivos antigos trazem caracteres acentuados corrompidos. A normalização
@@ -125,7 +131,8 @@ COLUNAS = {
     "divida bruta": "divida_bruta", "caixa e equivalentes": "caixa", "divida liquida": "divida_liquida",
     "divida liquida/ebitda": "dl_ebitda", "divida liquida/pl": "dl_pl", "ev/ebitda": "ev_ebitda",
     "roe": "roe", "roic": "roic", "fco": "fco", "fci": "fci", "fcf": "fcf",
-    "free cash flow": "free_cash_flow", "adjusted free cash flow": "adjusted_free_cash_flow", "sbc": "sbc",
+    "free cash flow": "free_cash_flow", "free cash flow yield": "free_cash_flow_yield",
+    "adjusted free cash flow": "adjusted_free_cash_flow", "sbc": "sbc",
     "capex": "capex", "net capex": "net_capex",
     "r&d": "rd", "adj net capex": "adj_net_capex", "working capital": "working_capital",
     "dso": "dso", "dio": "dio", "dpo": "dpo",
@@ -230,6 +237,13 @@ def linhas(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go
                                  line={'color': cores["serie"][i], 'width': 2}, marker={'size': 8, 'color': cores["serie"][i]},
                                  hovertemplate=f"{metrica.label}: %{{customdata}}<extra></extra>", customdata=[fmt(v, metrica.tipo) for v in valores]))
     return _layout(fig, cores, titulo, METRICAS[colunas[0]].unidade, len(colunas))
+
+
+def linhas_com_referencia_zero(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go.Figure:
+    """Desenha linhas de indicadores e destaca o nível zero."""
+    fig = linhas(df, colunas, titulo, cores)
+    fig.add_hline(y=0, line={"color": cores["negativo"], "width": 1.5})
+    return fig
 
 
 def barras(df: pd.DataFrame, colunas: list[str], titulo: str, cores: dict) -> go.Figure:
@@ -516,11 +530,15 @@ def tabela_dcf_valuation(catalogo: dict) -> pd.DataFrame:
         status = (
             "Sobrevalorizada" if variacao > 0 else "Subvalorizada" if variacao < 0 else "Em linha"
         ) if pd.notna(variacao) else "—"
+        upside_downside = (
+            (valor_valuation / preco_fechamento - 1) * 100
+            if status in {"Subvalorizada", "Sobrevalorizada"} else float("nan")
+        )
         registros.append({
             "Ticker": ticker,
             "Preço de fechamento": preco_fechamento,
             "Valuation": valor_valuation,
-            "Variação": variacao,
+            "Upside/Downside": upside_downside,
             "Status": status,
             "Fonte": arquivo_valuation.name if arquivo_valuation is not None else "—",
         })
@@ -838,14 +856,14 @@ with abas[11]:
     with st.spinner("Lendo valuations e preços de fechamento..."):
         tabela_valuation = tabela_dcf_valuation(catalogo)
     st.dataframe(
-        tabela_valuation.style.map(cor_variacao_valuation, subset=["Variação"]),
+        tabela_valuation.style.map(cor_variacao_valuation, subset=["Upside/Downside"]),
         width="stretch",
         hide_index=True,
         column_config={
             "Ticker": st.column_config.TextColumn("Ticker"),
             "Preço de fechamento": st.column_config.NumberColumn("Preço de fechamento", format="US$ %.2f"),
             "Valuation": st.column_config.NumberColumn("Valuation", format="US$ %.2f"),
-            "Variação": st.column_config.NumberColumn("Variação", format="%.2f%%"),
+            "Upside/Downside": st.column_config.NumberColumn("Upside/Downside", format="%.2f%%"),
             "Status": st.column_config.TextColumn("Status"),
             "Fonte": st.column_config.TextColumn("Fonte"),
         },
@@ -862,6 +880,7 @@ with abas[2]:
 with abas[3]:
     bloco(df, cores, [(barras, existentes("fco", "fci", "fcf"), "Fluxos de caixa (FCO, FCI, FCF)"),
                        (barras, existentes("free_cash_flow", "adjusted_free_cash_flow", "sbc"), "Free cash flow e SBC"),
+                       (linhas_com_referencia_zero, existentes("free_cash_flow_yield"), "Free cash flow yield"),
                        (barras, existentes("capex", "net_capex", "rd", "adj_net_capex"), "Capex e P&D"),
                        (barras, existentes("fcfe", "fcff"), "FCFE e FCFF"),
                        (barras, existentes("working_capital"), "Capital de giro"),
