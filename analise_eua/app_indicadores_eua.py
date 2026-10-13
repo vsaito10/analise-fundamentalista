@@ -340,16 +340,23 @@ def ranking_barras(dados: pd.DataFrame, coluna: str, cores: dict, destaque: str)
 # Valuation e preco de mercado
 # ---------------------------------------------------------------------------
 def arquivo_valuation_mais_recente(setor: str, empresa: str) -> Path | None:
-    """Localiza o Excel mais recente em ``<setor>/<empresa>`` pelo prefixo MMYYYY."""
+    """Localiza o Excel mais recente em ``<setor>/<empresa>``.
+
+    A convencao de nome e o prefixo MMYYYY. Arquivos fora dela (por exemplo
+    ``DCF_PLTR_2026.xlsx``) entram pela data de modificacao, com prioridade menor
+    que a dos nomeados pela convencao.
+    """
     pasta = Path(RAIZ_VALUATIONS) / setor / empresa
     candidatos = []
     for arquivo in pasta.glob("*.xlsx"):
-        try:
-            data = datetime.strptime(arquivo.name[:6], "%m%Y")  # noqa: DTZ007
-        except ValueError:
+        if arquivo.name.startswith("~$"):          # arquivo temporario do Excel aberto
             continue
-        candidatos.append((data, arquivo.name, arquivo))
-    return max(candidatos, default=(None, None, None))[2]
+        try:
+            data, pela_convencao = datetime.strptime(arquivo.name[:6], "%m%Y"), True  # noqa: DTZ007
+        except ValueError:
+            data, pela_convencao = datetime.fromtimestamp(arquivo.stat().st_mtime), False  # noqa: DTZ006
+        candidatos.append((pela_convencao, data, arquivo.name, arquivo))
+    return max(candidatos, default=(None, None, None, None))[3]
 
 
 def _numero_da_celula(valor: object) -> float | None:
@@ -376,6 +383,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "intel": "B51", "intc": "B51", "micron": "B51", "mu": "B51",
         "marvell": "B51", "mrvl": "B51",
         "netflix": "B51", "nflx": "B51",
+        "palantir": "B51", "pltr": "B51",
         "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
@@ -729,6 +737,74 @@ def grafico_risco_retorno(precos: pd.DataFrame, tabela: pd.DataFrame, cores: dic
     return fig
 
 
+JANELA_BOLLINGER = 20
+
+
+def _rgba(cor_hex: str, alfa: float) -> str:
+    """Converte uma cor #rrggbb da paleta em rgba, para preenchimentos discretos."""
+    r, g, b = (int(cor_hex.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alfa})"
+
+
+def bandas_bollinger(fechamento: pd.Series, janela: int = JANELA_BOLLINGER) -> pd.DataFrame:
+    """Media movel do fechamento e bandas de 2 e 3 desvios-padrao."""
+    valores = pd.to_numeric(fechamento, errors="coerce")
+    media = valores.rolling(janela, min_periods=janela).mean()
+    desvio = valores.rolling(janela, min_periods=janela).std(ddof=0)
+    return pd.DataFrame({
+        "media": media,
+        "sup_2": media + 2 * desvio, "inf_2": media - 2 * desvio,
+        "sup_3": media + 3 * desvio, "inf_3": media - 3 * desvio,
+    }, index=valores.index)
+
+
+def candlestick_bollinger(precos: pd.DataFrame, ticker: str, cores: dict,
+                          janela: int = JANELA_BOLLINGER) -> go.Figure:
+    """Candlestick diario com as bandas de Bollinger de 2 e 3 desvios-padrao."""
+    bandas = bandas_bollinger(precos["Close"], janela)
+    fig = go.Figure()
+
+    # As bandas entram primeiro para ficarem atras dos candles; o traco pontilhado
+    # e a legenda distinguem 3 de 2 desvios sem competir com as cores dos candles.
+    for desvios, tracejado, largura in ((3, "dot", 1), (2, "solid", 1.2)):
+        for extremo, sinal, preenchimento in (("sup", "+", None), ("inf", "-", "tonexty" if desvios == 2 else None)):
+            fig.add_trace(go.Scatter(
+                x=bandas.index, y=bandas[f"{extremo}_{desvios}"],
+                name=f"Bollinger {desvios}σ", legendgroup=f"bollinger_{desvios}",
+                showlegend=extremo == "sup", mode="lines",
+                line={"color": cores["neutro"], "width": largura, "dash": tracejado},
+                fill=preenchimento, fillcolor=_rgba(cores["neutro"], 0.10),
+                hovertemplate=f"{sinal}{desvios}σ: US$ %{{y:,.2f}}<extra></extra>",
+            ))
+    fig.add_trace(go.Scatter(
+        x=bandas.index, y=bandas["media"], name=f"Média móvel ({janela} pregões)", mode="lines",
+        line={"color": cores["serie"][3], "width": 2},
+        hovertemplate="Média: US$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Candlestick(
+        x=precos.index, open=precos["Open"], high=precos["High"], low=precos["Low"],
+        close=precos["Close"], name=ticker, showlegend=False,
+        increasing_line_color=cores["positivo"], decreasing_line_color=cores["negativo"],
+        increasing_fillcolor=cores["positivo"], decreasing_fillcolor=cores["negativo"],
+        line={"width": 1},
+    ))
+
+    fig.update_layout(
+        title={'text': f"{ticker} — preços e bandas de Bollinger", 'font': {'size': 15, 'color': cores["texto"]},
+               'x': 0, 'xanchor': "left"},
+        height=520, margin={'l': 8, 'r': 64, 't': 56, 'b': 58},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={'color': cores["texto_2"], 'size': 12}, hovermode="closest",
+        legend={'orientation': "h", 'yanchor': "top", 'y': -0.12, 'xanchor': "left", 'x': 0,
+                'bgcolor': "rgba(0,0,0,0)", 'font': {'color': cores["texto_2"]}},
+        xaxis_rangeslider_visible=False,
+    )
+    fig.update_xaxes(type="date", showgrid=False, linecolor=cores["grade"], tickcolor=cores["grade"], ticks="outside")
+    fig.update_yaxes(showgrid=True, gridcolor=cores["grade"], zeroline=False,
+                     title={'text': "US$ por ação", 'font': {'size': 11, 'color': cores["texto_2"]}})
+    return fig
+
+
 def candlestick(precos: pd.DataFrame, ticker: str, valor: float, arquivo: Path, cores: dict) -> go.Figure:
     fig = go.Figure(go.Candlestick(
         x=precos.index, open=precos["Open"], high=precos["High"], low=precos["Low"], close=precos["Close"],
@@ -974,8 +1050,16 @@ with abas[9]:
         if precos_acoes.empty:
             st.warning("Nao foi possivel obter os precos das ações selecionadas.")
         else:
-            st.plotly_chart(linhas_mercado(precos_acoes, "Preços das ações", "US$", cores),
-                            width="stretch")
+            st.caption(f"Candlesticks diários com bandas de Bollinger de 2 e 3 desvios-padrão "
+                       f"sobre a média móvel de {JANELA_BOLLINGER} pregões.")
+            for ticker_acao in tickers:
+                with st.spinner(f"Baixando cotações OHLC de {ticker_acao}..."):
+                    ohlc = carregar_ohlc(ticker_acao, periodos_mercado[periodo_mercado])
+                if ohlc.empty:
+                    st.warning(f"Não foi possível obter as cotações OHLC de {ticker_acao}.")
+                else:
+                    st.plotly_chart(candlestick_bollinger(ohlc, ticker_acao, cores),
+                                    width="stretch", key=f"candlestick_bollinger_{ticker_acao}")
             retorno_acumulado = precos_acoes.apply(
                 lambda serie: serie / serie.dropna().iloc[0] - 1 if serie.notna().any() else serie
             ).dropna(how="all")
