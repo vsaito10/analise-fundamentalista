@@ -384,6 +384,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "marvell": "B51", "mrvl": "B51",
         "netflix": "B51", "nflx": "B51",
         "palantir": "B51", "pltr": "B51",
+        "cloudflare": "B51", "net": "B51",
         "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
