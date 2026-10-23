@@ -29,6 +29,10 @@ from yfinance.exceptions import YFException
 
 RAIZ_PADRAO = r"C:\B3\historico-arquivos\indicadores_fundamentalistas_eua"
 RAIZ_VALUATIONS = r"C:\B3\historico-arquivos\valuations\atualizado"
+RAIZ_PROJECOES = r"C:\B3\historico-arquivos\projecoes"
+# Diferenca de ate meio centavo entre LPA e projecao conta como "em linha"
+# (as estimativas sao cotadas em centavos).
+TOLERANCIA_LPA = 0.005
 
 SETORES = {
     "energia_eletrica": "Energia elétrica",
@@ -68,6 +72,8 @@ MILHAR_PARA_BILHAO = 1e6
 METRICAS = {
     "pl_damodaran": Metrica("P/L Damodaran", "x", 1, "Preço sobre lucro pelo modelo Damodaran"),
     "pl": Metrica("P/L", "x"),
+    "lpa": Metrica("LPA", "usd", 1, "Lucro por ação diluído (básico quando não há o diluído), "
+                   "ajustado por desdobramentos"),
     "lp": Metrica("L/P (earnings yield)", "pct"),
     "ebitda": Metrica("EBITDA", "usd_bi", MILHAO_PARA_BILHAO),
     "margem_liquida": Metrica("Margem líquida", "pct"),
@@ -144,6 +150,40 @@ COLUNAS = {
 }
 
 
+# Mes de encerramento do 1o trimestre fiscal de cada empresa, conforme as anotacoes do
+# notebook sec-api-eua.ipynb ("1Q -> Lancamento em ..."). Os demais trimestres seguem de
+# 3 em 3 meses; empresas fora da lista usam o ano-calendario (1T = marco).
+MES_1T_FISCAL = {
+    "nvda": 4, "amd": 3, "intc": 3, "mu": 12, "avgo": 2, "mrvl": 5, "qcom": 12,
+    "cdns": 3, "snps": 1,
+    "amat": 1, "klac": 9, "lrcx": 9,
+    "ceg": 3, "vst": 3, "tln": 3, "oklo": 3, "nrg": 3,
+    "amzn": 3, "aapl": 12, "googl": 3, "meta": 3, "msft": 9, "nflx": 3,
+    "pltr": 3, "net": 3, "ddog": 3,
+}
+
+
+def periodo_trimestral(datas, ticker: str) -> pd.Series:
+    """Rotulo ``AAAATq`` do trimestre fiscal da empresa.
+
+    ``AAAA`` e o ano em que o exercicio fiscal termina (o mesmo dos rotulos anuais do
+    10-K) e ``q`` o trimestre fiscal. Ex.: NVIDIA (1T = abril), periodo encerrado em
+    julho/2026 -> ``2027T2``.
+    """
+    datas = pd.to_datetime(pd.Series(datas), errors="coerce").reset_index(drop=True)
+    mes_1t = MES_1T_FISCAL.get(ticker.lower(), 3)
+    # A data bruta da SEC pode cair alguns dias depois (mes seguinte) ou antes (mes
+    # anterior) do mes de encerramento: aproxima para o mes do ciclo da empresa.
+    ajuste = ((datas.dt.month - mes_1t) % 3).map({0: 0, 1: -1, 2: 1})
+    meses = datas.dt.year * 12 + datas.dt.month - 1 + ajuste
+    ano, mes = meses // 12, meses % 12 + 1
+    trimestre = ((mes - mes_1t) % 12) // 3 + 1
+    mes_fim_exercicio = (mes_1t + 8) % 12 + 1
+    ano_fiscal = ano + (mes > mes_fim_exercicio).astype("Int64")
+    rotulo = ano_fiscal.astype("Int64").astype(str) + "T" + trimestre.astype("Int64").astype(str)
+    return rotulo.where(datas.notna())
+
+
 def nome_setor(setor: str) -> str:
     return SETORES.get(setor, setor.replace("_", " ").capitalize())
 
@@ -178,7 +218,8 @@ def carregar(caminho: str, aba: str, _mtime: float) -> pd.DataFrame:
         df = df.sort_values("periodo")
     else:
         datas = pd.to_datetime(periodo_bruto, errors="coerce")
-        df["periodo"] = datas.dt.year.astype("Int64").astype(str) + "T" + datas.dt.quarter.astype("Int64").astype(str)
+        ticker = Path(caminho).stem.removesuffix("_indicators")
+        df["periodo"] = periodo_trimestral(datas, ticker).to_numpy()
         df["_data"] = datas
         df = df.sort_values("_data")
     return df.reset_index(drop=True)
@@ -200,8 +241,104 @@ def carregar_receita(caminho: str, tipo: str, _mtime: float) -> pd.DataFrame:
     if tipo == "indicators_10k":
         periodos = datas.year.astype("Int64").astype(str)
     else:
-        periodos = datas.year.astype("Int64").astype(str) + "T" + datas.quarter.astype("Int64").astype(str)
+        periodos = periodo_trimestral(datas, Path(caminho).stem.rsplit("_", 1)[0]).to_numpy()
     return pd.DataFrame({"periodo": periodos, "receita": receita.to_numpy()}).dropna(subset=["periodo", "receita"])
+
+
+# Prazo maximo de entrega a SEC (large accelerated filers), em dias apos o fim do periodo.
+PRAZO_ENTREGA = {"indicators_10k": 60, "indicators_10q": 40}
+
+
+def _linha_demonstrativo(demonstrativo: pd.DataFrame, *nomes: str) -> pd.Series | None:
+    """Primeira linha encontrada (pelo nome normalizado) convertida para numero."""
+    chaves = {_chave_coluna(indice): indice for indice in demonstrativo.index}
+    nome = next((chaves[n] for n in nomes if n in chaves), None)
+    if nome is None:
+        return None
+    valores = demonstrativo.loc[nome]
+    if isinstance(valores, pd.DataFrame):          # linha repetida: fica com a primeira
+        valores = valores.iloc[0]
+    return pd.to_numeric(valores, errors="coerce")
+
+
+@st.cache_data(show_spinner=False)
+def carregar_lpa(caminho: str, tipo: str, _mtime: float) -> pd.DataFrame:
+    """LPA do demonstrativo de resultados, como publicado (sem ajuste de desdobramento).
+
+    Usa o LPA diluido e cai para o basico quando o diluido falta ou vem 0,00 com basico
+    diferente de zero. ``escala`` compara o LPA com lucro / acoes da mesma linha
+    (normalizado pela mediana do arquivo): ~1 quando os dois vieram do mesmo relatorio,
+    ~1/razao quando o LPA ja foi reapresentado depois de um desdobramento.
+    """
+    vazio = pd.DataFrame(columns=["periodo", "data_fim", "lpa", "escala"])
+    demonstrativo = pd.read_excel(caminho, sheet_name="income_statement", index_col=0)
+    diluido = _linha_demonstrativo(demonstrativo, "earnings per share, diluted")
+    basico = _linha_demonstrativo(demonstrativo, "earnings per share, basic")
+    if diluido is None and basico is None:
+        return vazio
+    if diluido is None:
+        lpa = basico
+    elif basico is None:
+        lpa = diluido
+    else:
+        lpa = diluido.where(diluido.notna() & ~((diluido == 0) & (basico != 0)), basico)
+
+    lucro = _linha_demonstrativo(demonstrativo, "net income")
+    acoes = _linha_demonstrativo(demonstrativo, "number of shares - diluted", "number of shares - basic")
+    if lucro is not None and acoes is not None:
+        relacao = (lpa / (lucro / acoes)).where((lpa.abs() > 0.02) & (lucro != 0) & (acoes > 0))
+        escala = relacao / relacao.median()
+    else:
+        escala = pd.Series(np.nan, index=lpa.index)
+
+    datas = pd.to_datetime(lpa.index, errors="coerce")
+    if tipo == "indicators_10k":
+        periodos = datas.year.astype("Int64").astype(str)
+    else:
+        periodos = periodo_trimestral(datas, Path(caminho).stem.rsplit("_", 1)[0]).to_numpy()
+    df = pd.DataFrame({"periodo": periodos, "data_fim": datas, "lpa": lpa.to_numpy(),
+                       "escala": escala.reindex(lpa.index).to_numpy()})
+    return df.dropna(subset=["data_fim", "lpa"]).sort_values("data_fim").drop_duplicates("periodo", keep="last")
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def carregar_desdobramentos(ticker: str) -> pd.Series | None:
+    """Historico de desdobramentos do Yahoo (razao novas/antigas acoes); None se falhar."""
+    import yfinance as yf
+
+    yf.cache.set_cache_location(str(Path(tempfile.gettempdir()) / "analise-fundamentalista-yfinance"))
+    try:
+        desdobramentos = yf.Ticker(ticker).splits
+    except (KeyError, RequestsError, ValueError, YFException):
+        return None
+    if desdobramentos.empty:
+        return pd.Series(dtype=float)
+    desdobramentos.index = pd.DatetimeIndex(desdobramentos.index).tz_localize(None)
+    return desdobramentos[desdobramentos > 0]
+
+
+def ajustar_desdobramentos(lpa: pd.DataFrame, desdobramentos: pd.Series, tipo: str) -> pd.Series:
+    """Divide o LPA publicado antes de cada desdobramento pela razao do desdobramento.
+
+    O relatorio ja vem ajustado quando e entregue depois do desdobramento, mesmo que o
+    periodo tenha terminado antes. Como os arquivos nao trazem a data de entrega, um
+    periodo so conta como publicado antes se terminou mais que o prazo legal da SEC
+    antes do desdobramento. Linhas cujo LPA ja foi reapresentado por um relatorio
+    posterior (``escala`` ~ 1/razao acumulada) nao sao divididas de novo.
+    """
+    prazo = pd.Timedelta(days=PRAZO_ENTREGA[tipo])
+    ordenados = sorted(desdobramentos.items())
+    ajustado = []
+    for linha in lpa.itertuples():
+        razoes = [razao for data, razao in ordenados if linha.data_fim + prazo < data]
+        acumulados = np.cumprod([1.0, *razoes])
+        ja_aplicado = 1.0
+        if pd.notna(linha.escala) and linha.escala > 0:
+            distancias = np.abs(np.log(linha.escala * acumulados))
+            if distancias.min() < np.log(1.25):
+                ja_aplicado = acumulados[distancias.argmin()]
+        ajustado.append(linha.lpa / (acumulados[-1] / ja_aplicado))
+    return pd.Series(ajustado, index=lpa.index, dtype=float)
 
 
 def numero(valor: float) -> str:
@@ -385,6 +522,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "netflix": "B51", "nflx": "B51",
         "palantir": "B51", "pltr": "B51",
         "cloudflare": "B51", "net": "B51",
+        "datadog": "B51", "ddog": "B51",
         "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
@@ -828,6 +966,84 @@ def candlestick(precos: pd.DataFrame, ticker: str, valor: float, arquivo: Path, 
     return fig
 
 
+RESULTADO_LPA = {
+    "Acima": "Acima da projeção",
+    "Abaixo": "Abaixo da projeção",
+    "Em linha": "Em linha com a projeção",
+}
+
+
+@st.cache_data(show_spinner=False)
+def carregar_projecoes(caminho: str, ticker: str, _mtime: float) -> pd.DataFrame | None:
+    """LPA divulgado e projecao do mercado de uma empresa em ``projecoes_<setor>.xlsx``.
+
+    Cada aba e uma empresa (nome da aba = ticker). A primeira linha traz o ticker e a
+    segunda, o cabecalho ``Data | Exercício | LPA | Projeção``. O exercicio vem como
+    texto ``MM/AAAA`` ou como data, conforme o arquivo. Devolve None se nao houver aba.
+    """
+    aba = next((nome for nome in pd.ExcelFile(caminho).sheet_names
+                if nome.strip().lower() == ticker.lower()), None)
+    if aba is None:
+        return None
+    bruto = pd.read_excel(caminho, sheet_name=aba, header=1)
+    bruto.columns = [_chave_coluna(coluna) for coluna in bruto.columns]
+    exercicio = bruto["exercicio"].map(
+        lambda valor: pd.Timestamp(valor) if isinstance(valor, datetime)
+        else pd.to_datetime(str(valor).strip(), format="%m/%Y", errors="coerce"))
+    df = pd.DataFrame({
+        "divulgacao": pd.to_datetime(bruto["data"], errors="coerce"),
+        "exercicio": exercicio,
+        "lpa": pd.to_numeric(bruto["lpa"], errors="coerce"),
+        "projecao": pd.to_numeric(bruto["projecao"], errors="coerce"),
+    }).dropna(subset=["exercicio", "lpa", "projecao"]).sort_values("exercicio").reset_index(drop=True)
+
+    limite = TOLERANCIA_LPA + 1e-9          # folga para o arredondamento de ponto flutuante
+    df["periodo"] = df["exercicio"].dt.strftime("%m/%Y")
+    df["surpresa"] = df["lpa"] - df["projecao"]
+    # Percentual so quando a projecao nao e praticamente zero; senao ele explode.
+    df["surpresa_pct"] = (df["surpresa"] / df["projecao"].abs()).where(df["projecao"].abs() >= limite) * 100
+    df["resultado"] = np.select([df["surpresa"] > limite, df["surpresa"] < -limite],
+                                ["Acima", "Abaixo"], default="Em linha")
+    return df
+
+
+def grafico_lpa_projecao(projecoes: pd.DataFrame, ticker: str, cores: dict) -> go.Figure:
+    """LPA divulgado contra a projecao do mercado em cada trimestre."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=projecoes["periodo"], y=projecoes["projecao"], name="Projeção do mercado", mode="lines+markers",
+        line={"color": cores["neutro"], "width": 2, "dash": "dash"},
+        marker={"symbol": "circle-open", "size": 9, "color": cores["neutro"], "line": {"width": 2}},
+        hovertemplate="Projeção: US$ %{y:,.2f}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=projecoes["periodo"], y=projecoes["lpa"], name="LPA divulgado", mode="lines+markers",
+        line={"color": cores["serie"][0], "width": 2}, marker={"size": 8, "color": cores["serie"][0]},
+        customdata=projecoes["resultado"].map(RESULTADO_LPA),
+        hovertemplate="LPA: US$ %{y:,.2f} · %{customdata}<extra></extra>",
+    ))
+    _layout(fig, cores, f"{ticker} — LPA divulgado e projeção do mercado — Site Investing", "US$ por ação", 2)
+    fig.update_layout(height=420)
+    return fig
+
+
+def grafico_surpresa_lpa(projecoes: pd.DataFrame, cores: dict) -> go.Figure:
+    """Diferenca entre LPA divulgado e projecao; a cor indica acima, abaixo ou em linha."""
+    cor = {"Acima": cores["positivo"], "Abaixo": cores["negativo"], "Em linha": cores["neutro"]}
+    percentual = [f"{valor:+.2f}%" if pd.notna(valor) else "projeção ≈ 0"
+                  for valor in projecoes["surpresa_pct"]]
+    surpresa = [f"US$ {float(valor):+,.2f}" if pd.notna(valor) else "—" for valor in projecoes["surpresa"]]
+    fig = go.Figure(go.Bar(
+        x=projecoes["periodo"], y=projecoes["surpresa"], name="Surpresa",
+        marker={"color": projecoes["resultado"].map(cor).tolist(), "line": {"width": 0}},
+        customdata=np.column_stack([projecoes["resultado"].map(RESULTADO_LPA), percentual,
+                                    projecoes["divulgacao"].dt.strftime("%d/%m/%Y").fillna("—"), surpresa]),
+        hovertemplate=("%{customdata[0]}<br>Surpresa: %{customdata[3]} (%{customdata[1]})"
+                       "<br>Divulgado em %{customdata[2]}<extra></extra>"),
+    ))
+    return _layout(fig, cores, "Surpresa do LPA (divulgado − projeção)", "US$ por ação", 1)
+
+
 st.set_page_config(page_title="Indicadores fundamentalistas — EUA", page_icon="📊", layout="wide")
 tema = getattr(st.context.theme, "type", None) or "light"
 cores = PALETA.get(tema, PALETA["light"])
@@ -858,6 +1074,19 @@ try:
 except ValueError:
     st.error(f"A aba `{tipo}` não foi encontrada em `{arquivo.name}`.")
     st.stop()
+ticker_arquivo = arquivo.stem.removesuffix("_indicators")
+arquivo_resultados = arquivo.with_name(f"{ticker_arquivo}_{tipo.removeprefix('indicators_')}.xlsx")
+aviso_lpa = None
+if arquivo_resultados.is_file():
+    lpa_publicado = carregar_lpa(str(arquivo_resultados), tipo, arquivo_resultados.stat().st_mtime)
+    if not lpa_publicado.empty:
+        desdobramentos = carregar_desdobramentos(ticker_arquivo.upper())
+        if desdobramentos is None:
+            aviso_lpa = ("Não foi possível obter o histórico de desdobramentos no Yahoo Finance; "
+                         "o LPA aparece como publicado, sem ajuste.")
+            desdobramentos = pd.Series(dtype=float)
+        lpa_publicado = lpa_publicado.assign(lpa=ajustar_desdobramentos(lpa_publicado, desdobramentos, tipo))
+        df = df.merge(lpa_publicado[["periodo", "lpa"]], on="periodo", how="left")
 disponiveis = [coluna for coluna in METRICAS if coluna in df.columns]
 
 st.sidebar.header("Período")
@@ -880,7 +1109,7 @@ for faixa in (destaques[:4], destaques[4:]):
             delta = None if anterior is None or pd.isna(atual) or pd.isna(anterior) else atual - anterior
             coluna_st.metric(metrica.label, fmt(atual, metrica.tipo), None if delta is None else fmt(delta, metrica.tipo), help=metrica.ajuda or None)
 
-abas = st.tabs(["Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Fraude", "Explorar", "Dados", "Comparação múltiplos", "Indicadores gerais", "DCF valuation", "DCF valuation tabela"])
+abas = st.tabs(["Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Fraude", "Explorar", "Dados", "Comparação múltiplos", "Indicadores gerais", "DCF valuation", "DCF valuation tabela", "LPA vs projeção"])
 
 def existentes(*colunas: str) -> list[str]:
     return [coluna for coluna in colunas if coluna in disponiveis]
@@ -888,7 +1117,10 @@ def existentes(*colunas: str) -> list[str]:
 with abas[0]:
     bloco(df, cores, [(linhas, existentes("pl_damodaran", "pl", "pvp", "ev_ebitda"), "Múltiplos de mercado"),
                        (linhas, existentes("lp"), "Earnings yield (L/P)"),
-                       (barras, existentes("valor_mercado"), "Valor de mercado")])
+                       (barras, existentes("valor_mercado"), "Valor de mercado"),
+                       (barras, existentes("lpa"), "LPA (ajustado por desdobramentos)")])
+    if aviso_lpa:
+        st.caption(aviso_lpa)
 
 with abas[10]:
     arquivo_valuation = arquivo_valuation_mais_recente(setor, empresa)
@@ -1124,3 +1356,48 @@ with abas[9]:
                 heatmap_correlacoes = heatmap_correlacao(precos_acoes, cores)
                 if heatmap_correlacoes is not None:
                     st.plotly_chart(heatmap_correlacoes, width="stretch")
+
+with abas[12]:
+    ticker_projecao = arquivo.stem.removesuffix("_indicators")
+    arquivo_projecoes = Path(RAIZ_PROJECOES) / f"projecoes_{setor}.xlsx"
+    projecoes = (carregar_projecoes(str(arquivo_projecoes), ticker_projecao, arquivo_projecoes.stat().st_mtime)
+                 if arquivo_projecoes.is_file() else None)
+    if projecoes is None or projecoes.empty:
+        st.info(f"Não há projeções de LPA para {ticker_projecao.upper()} em `{arquivo_projecoes}`.")
+    else:
+        ultimo = projecoes.iloc[-1]
+        acima = int((projecoes["resultado"] == "Acima").sum())
+        abaixo = int((projecoes["resultado"] == "Abaixo").sum())
+        coluna_lpa, coluna_projecao, coluna_batidas, coluna_mediana = st.columns(4)
+        coluna_lpa.metric(f"LPA divulgado · {ultimo['periodo']}", f"US$ {ultimo['lpa']:,.2f}",
+                          f"{ultimo['surpresa']:+,.2f} vs projeção")
+        coluna_projecao.metric(f"Projeção do mercado · {ultimo['periodo']}", f"US$ {ultimo['projecao']:,.2f}")
+        coluna_batidas.metric("Trimestres acima da projeção", f"{acima} de {len(projecoes)}",
+                              help=f"{abaixo} abaixo e {len(projecoes) - acima - abaixo} em linha.")
+        mediana = projecoes["surpresa_pct"].median()
+        coluna_mediana.metric("Surpresa mediana", f"{mediana:+.1f}%" if pd.notna(mediana) else "—",
+                              help="Mediana da surpresa percentual; menos sensível a trimestres "
+                                   "com projeção próxima de zero do que a média.")
+
+        st.plotly_chart(grafico_lpa_projecao(projecoes, ticker_projecao.upper(), cores),
+                        width="stretch", key="lpa_projecao")
+        st.plotly_chart(grafico_surpresa_lpa(projecoes, cores), width="stretch", key="lpa_surpresa")
+        st.caption("Exercício = mês de encerramento do trimestre fiscal. Barras azuis: LPA acima da projeção; "
+                   "vermelhas: abaixo; cinza: em linha (diferença de até meio centavo). "
+                   f"Fonte: {arquivo_projecoes.name}, aba {ticker_projecao}.")
+
+        with st.expander("Tabela"):
+            st.dataframe(
+                projecoes[["divulgacao", "periodo", "lpa", "projecao", "surpresa", "surpresa_pct", "resultado"]]
+                .iloc[::-1],
+                width="stretch", hide_index=True,
+                column_config={
+                    "divulgacao": st.column_config.DateColumn("Divulgação", format="DD/MM/YYYY"),
+                    "periodo": st.column_config.TextColumn("Exercício"),
+                    "lpa": st.column_config.NumberColumn("LPA (US$)", format="%.3f"),
+                    "projecao": st.column_config.NumberColumn("Projeção (US$)", format="%.3f"),
+                    "surpresa": st.column_config.NumberColumn("Surpresa (US$)", format="%+.3f"),
+                    "surpresa_pct": st.column_config.NumberColumn("Surpresa (%)", format="%+.1f%%"),
+                    "resultado": st.column_config.TextColumn("Resultado"),
+                },
+            )
