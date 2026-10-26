@@ -523,6 +523,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "palantir": "B51", "pltr": "B51",
         "cloudflare": "B51", "net": "B51",
         "datadog": "B51", "ddog": "B51",
+        "servicenow": "B51", "now": "B51",
         "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
