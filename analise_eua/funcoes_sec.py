@@ -33,6 +33,10 @@ statement_keys_map = {
         "condensed balance sheets",
         "condensed balance sheet",
         "unaudited condensed consolidated balance sheets",
+        "consolidated and combined statement of financial position",
+        "consolidated statement of financial position (unaudited)",
+        "consolidated and combined statement of financial position (unaudited)",
+        "combined statement of financial position (unaudited)"
     ],
 
     "income_statement": [
@@ -74,7 +78,11 @@ statement_keys_map = {
         "consolidated statements of comprehensive income (loss)",
         "consolidated statements of comprehensive loss",
         "condensed consolidated statements of comprehensive income",
-        "condensed consolidated statements of comprehensive income (loss)"
+        "condensed consolidated statements of comprehensive income (loss)",
+        "consolidated and combined statement of income (loss)",
+        "consolidated statement of income (loss) (unaudited)",
+        "consolidated and combined statement of income (loss) (unaudited)",
+        "combined statement of income (loss) (unaudited)"
     ],
 
     "income_statement_2": [
@@ -99,7 +107,11 @@ statement_keys_map = {
         "condensed consolidated statements of cash flows (unaudited)",
         "statements of cash flows",
         "statement of cash flows",
-        "unaudited condensed consolidated statements of cash flows"
+        "unaudited condensed consolidated statements of cash flows",
+        "consolidated and combined statement of cash flows",
+        "consolidated statement of cash flows (unaudited)",
+        "consolidated and combined statement of cash flows (unaudited)",
+        "combined statement of cash flows (unaudited)"
     ],
 
     "cross_holding": [
@@ -191,6 +203,11 @@ statement_keys_map = {
     "restructuring_pretax_charges": [
         # META -> 'Note 3. Restructuring'
         "restructuring - narrative (details)"
+    ],
+
+    "other_liabilities": [
+        # GEV -> 'Note 14. CURRENT AND ALL OTHER LIABILITIES'
+        "current and all other liabilities (details)",
     ]
 }
 
