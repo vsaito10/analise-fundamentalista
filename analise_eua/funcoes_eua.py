@@ -923,37 +923,6 @@ def indicador_vm(ten_k: bool, price: pd.Series, df_is: pd.DataFrame) -> tuple[pd
         return vm_10q
     
 
-def indicador_vm_2(ten_k: bool, price: pd.Series, df_is: pd.DataFrame) -> pd.Series:
-    """
-    Parameters
-    ----------
-    ten_k: bool
-        Se o arquivo for 10-K (True), se for 10-Q (False).
-    price: pd.Series
-        Série pandas dos preços do ativo.
-    df_is: pd.DataFrame
-        DataFrame do 'income statement' (DRE).
-
-    Returns
-    -------
-    vm: pd.Series
-        Série pandas do indicador valor de mercado.
-    vm_10q: pd.Series
-        Série pandas do indicador valor de mercado trimestral.
-
-    NOTE: Eu não estou multiplicando por 1000, porque no income statement o valor do nº ações está na escala real.
-    Apple e Vistra são empresas que eu utilizo essa função.
-    """
-    if ten_k:
-        # Calculando o valor de mercado
-        vm = price.values * df_is.loc['Number of Shares - Basic']
-        return vm
-    else:
-        # Calculando o valor de mercado e retirando os dados de 2020
-        vm_10q = price.values * df_is.loc['Number of Shares - Basic'][0:len(df_is.columns)-3]
-        return vm_10q
-
-
 def indicador_lpa(ten_k: bool, df_is: pd.DataFrame, idx: list) -> pd.Series|tuple[pd.Series, pd.Series]:
     """
     Parameters
@@ -1021,44 +990,6 @@ def fator_desdobramento(acoes: pd.Series) -> np.ndarray:
                 desdobramento = r_arredondado if razao >= 1 else 1 / r_arredondado
         fator[j] = fator[j-1] * desdobramento
     return fator
-
-
-def indicador_lpa_2(ten_k: bool, df_is: pd.DataFrame, idx: list) -> pd.Series|tuple[pd.Series, pd.Series]:
-    """
-    Parameters
-    ----------
-    ten_k: bool
-        Se o arquivo for 10-K (True), se for 10-Q (False).
-    df_is: pd.DataFrame
-        DataFrame do 'income statement' (DRE).
-    idx: list
-        Lista que contém as datas que serão o index do indicador.
-
-    Returns
-    -------
-    lpa: pd.Series
-        Série pandas do indicador LPA.
-    lpa_acumulado: pd.Series
-        Série pandas do indicador LPA acumulado trimestral.
-
-    NOTE: Eu estou dividindo por 1000, porque no income statement o valor do nº ações está numa escala diferente.
-    Apple e Vistra são empresas que eu utilizo essa função.
-    """
-    if ten_k:
-        # Calculand o LPA
-        lpa = round(df_is.loc['Net Income'] / (df_is.loc['Number of Shares - Basic']/1000), 2)
-        return lpa
-    else:
-        # LPA
-        lpa_10q = round(df_is.loc['Net Income'] / (df_is.loc['Number of Shares - Basic']/1000), 2)
-        # Calculando o LPA acumulado
-        lst_lpa_acum_10q = []
-        for i in range(len(lpa_10q) - 3):
-            lpa_acum = lpa_10q[i:i+4].sum()  
-            lst_lpa_acum_10q.append(round(lpa_acum,2))
-        # Criando uma serie do lpa acumulado
-        lpa_acumulado = pd.Series(lst_lpa_acum_10q, index=idx[0:len(idx)-3])
-        return lpa_10q, lpa_acumulado
 
 
 def indicador_p_lpa(ten_k: bool, price: pd.Series, lpa: pd.Series, idx: list) -> pd.Series:
@@ -1543,38 +1474,6 @@ def indicador_vpa(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.S
         vpa_10q = vpa_10q[0:len(vpa_10q)-3]
         return vpa_10q
     
-
-def indicador_vpa_2(ten_k: bool, df_bs: pd.DataFrame, df_is: pd.DataFrame) -> pd.Series:
-    """
-    Parameters
-    ----------
-    ten_k: bool
-        Se o arquivo for 10-K (True), se for 10-Q (False).
-    df_bs: pd.DataFrame
-        DataFrame do 'balance sheet' (balanço patrimonial).
-    df_is: pd.DataFrame
-        DataFrame do 'income statement' (DRE).
-
-    Returns
-    -------
-    vpa: pd.Series
-        Série pandas do indicador vpa.
-    vpa_10q: pd.Series
-        Série pandas do indicador vpa acumulado trimestral.
-    NOTE: Eu estou dividindo por 1000, porque no income statement o valor do nº ações está numa escala diferente.
-    Apple e Vistra são empresas que eu utilizo essa função.
-    """
-    if ten_k:
-        # Calculando o VPA
-        vpa = np.round(df_bs.loc['Total Shareholders Equity'] / (df_is.loc['Number of Shares - Basic']/1000), 2)
-        return vpa
-    else:
-        # Calculando o VPA
-        vpa_10q = np.round(df_bs.loc['Total Shareholders Equity'] / (df_is.loc['Number of Shares - Basic']/1000), 2)
-        # Retirando os dados de 2020
-        vpa_10q = vpa_10q[0:len(vpa_10q)-3]
-        return vpa_10q
-
 
 def indicador_p_vpa(ten_k: bool, price: pd.Series, vpa: pd.Series, idx: list) -> pd.Series:
     """
@@ -2971,37 +2870,7 @@ def indicador_dpa(ten_k: bool, df_cf: pd.Series, df_is: pd.Series, div_nao_acum:
         # Calculando o Dividendo por Ação
         dpa_10q = np.round(div_nao_acum / df_is.loc['Number of Shares - Basic'][0:len(df_is.columns)-3], 2)
         return dpa_10q
-    
-
-def indicador_dpa_2(ten_k: bool, df_cf: pd.Series, df_is: pd.Series, div_nao_acum: pd.Series) -> pd.Series:
-    """
-    Parameters
-    ----------
-    ten_k: bool
-        Se o arquivo for 10-K (True), se for 10-Q (False).
-    df_cf: pd.DataFrame
-        DataFrame do 'cash flow statement' (fluxo de caixa).
-    df_is: pd.DataFrame
-        DataFrame do 'income statement' (DRE).
-    
-    Returns
-    -------
-    dpa: pd.Series
-        Série pandas do indicador dpa.
-    dpa_10q: pd.Series
-        Série pandas do indicador dpa trimestral.
-    NOTE: Eu estou dividindo por 1000, porque no income statement o valor do nº ações está numa escala diferente.
-    Apple e Vistra são empresas que eu utilizo essa função.
-    """
-    if ten_k:
-        # Calculando o Dividendo por Ação
-        dpa = np.round(abs(df_cf.loc['Payments of Dividends']) / (df_is.loc['Number of Shares - Basic']/1000), 2)
-        return dpa
-    else:
-        # Calculando o Dividendo por Ação
-        dpa_10q = np.round(div_nao_acum / (df_is.loc['Number of Shares - Basic'][0:len(df_is.columns)-3]/1000), 2)
-        return dpa_10q
-    
+        
 
 def indicador_payout(ten_k: bool, df_cf: pd.Series, df_is: pd.Series, div_nao_acum: pd.Series) -> pd.Series:
     """
