@@ -979,15 +979,49 @@ def indicador_lpa(ten_k: bool, df_is: pd.DataFrame, idx: list) -> pd.Series|tupl
     else:
         # LPA
         lpa_10q = round(df_is.loc['Net Income'] / df_is.loc['Number of Shares - Basic'], 2)
-        # Calculando o LPA acumulado
+        # Fator de desdobramento de cada trimestre em relação ao mais recente
+        fator = fator_desdobramento(df_is.loc['Number of Shares - Basic'])
+        # Calculando o LPA acumulado (os 4 trimestres na base de ações do trimestre mais recente da janela)
         lst_lpa_acum_10q = []
         for i in range(len(lpa_10q) - 3):
-            lpa_acum = lpa_10q[i:i+4].sum()  
+            lpa_acum = (lpa_10q.iloc[i:i+4] * fator[i] / fator[i:i+4]).sum()
             lst_lpa_acum_10q.append(round(lpa_acum,2))
         # Criando uma serie do lpa acumulado
         lpa_acumulado = pd.Series(lst_lpa_acum_10q, index=idx[0:len(idx)-3])
         return lpa_10q, lpa_acumulado
-    
+
+
+def fator_desdobramento(acoes: pd.Series) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    acoes: pd.Series
+        Série pandas do nº de ações, do período mais recente para o mais antigo.
+
+    Returns
+    -------
+    fator: np.ndarray
+        Fator acumulado de desdobramento de cada período em relação ao mais recente
+        (ex.: 10 para os trimestres anteriores a um desdobramento de 10:1).
+
+    NOTE: os 10-Q não são reapresentados após um desdobramento, então o nº de ações salta pela
+    razão do desdobramento entre dois trimestres consecutivos. Saltos >= 1,5x próximos de um
+    múltiplo de 0,5 (ex.: 1,5, 2, 3, 4, 10) e até 50x são tratados como desdobramento; o inverso como grupamento.
+    Saltos maiores (ex.: ~1000x) são erro de escala no dado, não desdobramento.
+    """
+    acoes = pd.to_numeric(acoes, errors='coerce').to_numpy(dtype=float)
+    fator = np.ones(len(acoes))
+    for j in range(1, len(acoes)):
+        razao = acoes[j-1] / acoes[j]
+        desdobramento = 1.0
+        if np.isfinite(razao) and razao > 0:
+            r = razao if razao >= 1 else 1 / razao
+            r_arredondado = round(r * 2) / 2
+            if 1.5 <= r_arredondado <= 50 and abs(r - r_arredondado) / r_arredondado < 0.03:
+                desdobramento = r_arredondado if razao >= 1 else 1 / r_arredondado
+        fator[j] = fator[j-1] * desdobramento
+    return fator
+
 
 def indicador_lpa_2(ten_k: bool, df_is: pd.DataFrame, idx: list) -> pd.Series|tuple[pd.Series, pd.Series]:
     """
@@ -1095,8 +1129,14 @@ def indicador_p_lpa_2(ten_k: bool, vm: pd.Series, df_is: pd.DataFrame) -> pd.Ser
         return p_lpa_2
 
     else:
+        # Calculando o lucro líquido acumulado (soma dos 4 trimestres)
+        lucro_10q = df_is.loc['Net Income']
+        lucro_acum_10q = pd.Series(
+            [lucro_10q.iloc[i:i+4].sum() for i in range(len(lucro_10q) - 3)],
+            index=lucro_10q.index[:-3]
+        )
         # Calculando o P/L
-        p_lpa_2_10q = round((vm.values/1000) / (df_is.loc['Net Income'][:-3]), 2)
+        p_lpa_2_10q = round((vm.values/1000) / lucro_acum_10q, 2)
 
         return p_lpa_2_10q
 
