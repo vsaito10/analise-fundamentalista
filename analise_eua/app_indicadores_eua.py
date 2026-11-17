@@ -22,6 +22,7 @@ import openpyxl
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 from curl_cffi.requests import RequestsError
 from plotly.subplots import make_subplots
 from scipy.stats import t as student_t
@@ -30,6 +31,8 @@ from yfinance.exceptions import YFException
 RAIZ_PADRAO = r"C:\B3\historico-arquivos\indicadores_fundamentalistas_eua"
 RAIZ_VALUATIONS = r"C:\B3\historico-arquivos\valuations\atualizado"
 RAIZ_PROJECOES = r"C:\B3\historico-arquivos\projecoes"
+RAIZ_GRAFO_RECEITA = r"C:\B3\historico-arquivos\grafo_receita"
+ALTURA_GRAFO_RECEITA = 1450
 # Diferenca de ate meio centavo entre LPA e projecao conta como "em linha"
 # (as estimativas sao cotadas em centavos).
 TOLERANCIA_LPA = 0.005
@@ -120,12 +123,14 @@ METRICAS = {
 }
 
 RANKING = {
-    "lp": "maior", "pl": "menor", "ev_ebitda": "menor", "roe": "maior", "roic": "maior",
+    "valor_mercado": "maior", "lp": "maior", "pl": "menor", "ev_ebitda": "menor", "roe": "maior", "roic": "maior",
+    "margem_bruta": "maior", "margem_operacional": "maior", "margem_ebitda": "maior", "margem_liquida": "maior",
     "fco": "maior", "free_cash_flow": "maior", "adjusted_free_cash_flow": "maior", "free_cash_flow_yield": "maior",
     "dpa": "maior", "buyback": "maior",
     "dl_ebitda": "menor", "dl_pl": "menor",
 }
 SO_POSITIVOS = ("pl", "ev_ebitda")
+MARGENS = ("margem_bruta", "margem_operacional", "margem_ebitda", "margem_liquida")
 
 # Alguns arquivos antigos trazem caracteres acentuados corrompidos. A normalização
 # abaixo identifica a coluna pelo conteúdo e produz nomes internos estáveis.
@@ -184,6 +189,141 @@ def periodo_trimestral(datas, ticker: str) -> pd.Series:
     return rotulo.where(datas.notna())
 
 
+# Texto curto da aba "Sobre a empresa", por ticker (nome do arquivo <ticker>_indicators.xlsx).
+SOBRE_EMPRESA = {
+    "cdns": "A Cadence Design Systems desenvolve softwares de EDA (automação de projeto eletrônico), usados por fabricantes "
+            "como Nvidia, Apple e Qualcomm para projetar, simular e verificar chips antes da fabricação. Também vende "
+            "hardware de emulação e prototipagem, licencia blocos de propriedade intelectual (IP) de semicondutores e tem "
+            "softwares de análise de sistemas (térmica, eletromagnética e fluidodinâmica). A receita vem em grande parte de "
+            "licenças recorrentes de longo prazo, e a empresa divide com a Synopsys a liderança desse mercado.",
+    "snps": "A Synopsys é a maior empresa de softwares de EDA (automação de projeto eletrônico), ferramentas usadas para "
+            "projetar e verificar chips, e uma das maiores fornecedoras de blocos de propriedade intelectual (IP) de "
+            "semicondutores, como interfaces USB, PCIe e memória. Em 2025 concluiu a compra da Ansys, líder em software de "
+            "simulação de engenharia, ampliando sua atuação do projeto do chip para o projeto do sistema completo. A receita "
+            "vem principalmente de licenças recorrentes, e a empresa divide com a Cadence a liderança desse mercado.",
+    "ceg": "A Constellation Energy é a maior geradora de energia livre de carbono dos Estados Unidos e a maior operadora de "
+           "usinas nucleares do país. Vende eletricidade no atacado e diretamente para empresas, governos e residências, e "
+           "fecha contratos de longo prazo com grandes consumidores, como data centers de empresas de tecnologia. Também tem "
+           "usinas a gás natural, hidrelétricas, eólicas e solares, e ampliou sua base de geração com a compra da Calpine, "
+           "concluída em 2026.",
+    "nrg": "A NRG Energy é uma empresa integrada de energia que gera eletricidade e a vende no varejo para residências e "
+           "empresas, principalmente no Texas e no Leste dos Estados Unidos, com marcas como Reliant, Green Mountain e "
+           "Direct Energy. Também oferece serviços residenciais pela Vivint (segurança e automação) e vende gás natural. "
+           "O modelo combina usinas próprias, principalmente a gás, com uma grande carteira de clientes de varejo.",
+    "oklo": "A Oklo desenvolve pequenos reatores nucleares de fissão rápida (a linha Aurora) para gerar eletricidade e calor "
+            "para data centers, indústrias e bases militares. Seu modelo é construir, ser dona e operar as usinas, vendendo "
+            "a energia por contratos de longo prazo, em vez de vender os reatores. Também trabalha com reciclagem de "
+            "combustível nuclear e produção de radioisótopos. A empresa ainda está em fase pré-operacional, sem receita "
+            "relevante, à espera das licenças da NRC para a primeira usina.",
+    "tln": "A Talen Energy é uma produtora independente de energia que opera usinas nucleares e a gás natural, "
+           "principalmente na região PJM, no Leste dos Estados Unidos. Seu principal ativo é a usina nuclear de Susquehanna, "
+           "na Pensilvânia, que tem um contrato de longo prazo de fornecimento de energia para data centers da Amazon (AWS). "
+           "A receita vem da venda de energia e de capacidade no mercado atacadista e de contratos bilaterais.",
+    "vst": "A Vistra é uma das maiores empresas de energia dos Estados Unidos, com geração e varejo integrados. Tem uma grande "
+           "frota de usinas a gás natural, nucleares (que cresceram com a compra da Energy Harbor) e a carvão, além de "
+           "projetos solares e de baterias. No varejo, vende eletricidade para milhões de clientes residenciais e "
+           "comerciais, principalmente no Texas, com marcas como TXU Energy.",
+    "amat": "A Applied Materials é a maior fabricante de equipamentos para a produção de semicondutores do mundo. Suas "
+            "máquinas fazem etapas como deposição de materiais, corrosão (etch), implantação de íons, planarização (CMP) e "
+            "inspeção nas fábricas de chips de clientes como TSMC, Samsung e Intel. Também fabrica equipamentos para "
+            "displays e presta serviços, peças e atualizações para a base instalada de máquinas.",
+    "klac": "A KLA é líder mundial em equipamentos de inspeção e metrologia para a fabricação de semicondutores, que medem e "
+            "encontram defeitos nos wafers durante a produção para aumentar o rendimento (yield) das fábricas. Tem "
+            "participação dominante nesse nicho e também vende equipamentos para encapsulamento de chips e placas de "
+            "circuito. Uma parte relevante da receita vem de serviços para a base instalada.",
+    "lrcx": "A Lam Research fabrica equipamentos para a produção de semicondutores e é líder em corrosão (etch) e forte em "
+            "deposição de materiais, etapas essenciais para chips de memória (NAND e DRAM) e para lógica avançada. Seus "
+            "principais clientes são fabricantes como Samsung, TSMC, Micron e SK Hynix. Uma parte relevante da receita vem do "
+            "segmento de serviços e peças para a base instalada de equipamentos.",
+    "bwxt": "A BWX Technologies fabrica reatores nucleares e componentes nucleares para a Marinha dos EUA, sendo a única "
+            "fornecedora dos reatores que equipam submarinos e porta-aviões nucleares americanos. Também produz combustível "
+            "nuclear, opera instalações do Departamento de Energia e fornece componentes e serviços para usinas nucleares "
+            "civis, além de isótopos para medicina. A maior parte da receita vem de contratos de longo prazo com o governo "
+            "americano.",
+    "be": "A Bloom Energy fabrica e instala servidores de energia baseados em células a combustível de óxido sólido (SOFC), "
+          "que geram eletricidade no próprio local do cliente a partir de gás natural, biogás ou hidrogênio, sem combustão. "
+          "Vende para data centers, indústrias, hospitais, varejistas e concessionárias, e ganhou destaque como fonte de "
+          "energia rápida de instalar para data centers de IA, com acordos com empresas como Oracle, AEP e Brookfield. Também "
+          "desenvolve eletrolisadores para produzir hidrogênio. A receita vem da venda e instalação dos sistemas, de "
+          "contratos de serviço e manutenção de longo prazo e da venda de energia.",
+    "gev": "A GE Vernova, separada da General Electric em 2024, fabrica equipamentos para geração e transmissão de energia. "
+           "Seu maior negócio são as turbinas a gás e os serviços para usinas; também produz turbinas eólicas (em terra e no "
+           "mar), equipamentos de rede elétrica (transformadores, subestações e softwares de controle) e pequenos reatores "
+           "nucleares. Uma grande parte da receita e do lucro vem de contratos de serviço para a base instalada de turbinas.",
+    "amd": "A AMD (Advanced Micro Devices) projeta processadores e placas de vídeo sem fábrica própria (modelo fabless; a "
+           "fabricação é da TSMC). Vende CPUs Ryzen para PCs e EPYC para servidores, GPUs Radeon e aceleradores Instinct para "
+           "inteligência artificial em data centers, além de chips customizados para consoles (PlayStation e Xbox) e chips "
+           "programáveis (FPGAs, vindos da compra da Xilinx). Concorre com a Intel em CPUs e com a Nvidia em GPUs.",
+    "avgo": "A Broadcom é uma das maiores empresas de semicondutores e de software de infraestrutura do mundo. Em chips, vende "
+            "aceleradores de IA customizados (ASICs) para grandes empresas de tecnologia, chips de rede para data centers, "
+            "componentes de radiofrequência para smartphones (como os da Apple) e chips de banda larga e armazenamento. Em "
+            "software, oferece produtos para empresas, com destaque para a VMware, comprada em 2023, além de CA e Symantec.",
+    "intc": "A Intel projeta e fabrica processadores, sendo líder histórica em CPUs para PCs (linha Core) e servidores (linha "
+            "Xeon). Diferente da maioria das concorrentes, tem fábricas próprias e vem investindo pesado para recuperar a "
+            "liderança tecnológica de fabricação e oferecer fabricação para outras empresas (Intel Foundry). Também tem "
+            "participação na Mobileye (chips para carros autônomos) e na Altera (chips programáveis).",
+    "mrvl": "A Marvell Technology projeta chips sem fábrica própria (modelo fabless) para infraestrutura de dados. Seu maior "
+            "negócio é o de data centers: chips ópticos e eletro-ópticos que conectam servidores e aceleradores de IA, "
+            "chips customizados (ASICs) para grandes empresas de nuvem e controladores de armazenamento. Também vende chips "
+            "para redes de telecomunicações, equipamentos corporativos e automóveis.",
+    "mu": "A Micron é uma das três maiores fabricantes de memória do mundo, ao lado da Samsung e da SK Hynix, e a única grande "
+          "fabricante americana. Produz memória DRAM (incluindo HBM, usada em aceleradores de IA) e memória NAND flash, "
+          "vendidas para data centers, PCs, smartphones, carros e indústria. Por ser um mercado de commodity, a receita e as "
+          "margens oscilam bastante com o ciclo de preços de memória.",
+    "nvda": "A Nvidia projeta GPUs (unidades de processamento gráfico) e plataformas de computação acelerada sem fábrica "
+            "própria (modelo fabless). É a líder absoluta em chips para treinamento e execução de modelos de inteligência "
+            "artificial em data centers, vendendo GPUs, sistemas completos, equipamentos de rede (NVLink, InfiniBand e "
+            "Ethernet) e a plataforma de software CUDA. Também vende placas de vídeo GeForce para games e chips para "
+            "automóveis e robótica.",
+    "qcom": "A Qualcomm projeta chips sem fábrica própria (modelo fabless), sendo líder em processadores e modems para "
+            "smartphones (linha Snapdragon). Além da venda de chips (QCT), tem um negócio muito lucrativo de licenciamento "
+            "de patentes de tecnologias de comunicação sem fio, como 4G e 5G (QTL), cobrado de quase todos os fabricantes "
+            "de celular. Vem diversificando para chips de automóveis, PCs, internet das coisas e data centers.",
+    "net": "A Cloudflare opera uma das maiores redes globais de internet, com data centers em centenas de cidades, e vende "
+           "serviços na nuvem que deixam sites e aplicativos mais rápidos e seguros. Seus produtos incluem rede de "
+           "distribuição de conteúdo (CDN), proteção contra ataques DDoS, firewall de aplicações, segurança de acesso para "
+           "empresas (Zero Trust) e uma plataforma para desenvolvedores rodarem código e IA na borda da rede. A receita vem "
+           "de assinaturas.",
+    "ddog": "A Datadog oferece uma plataforma de monitoramento e segurança na nuvem para equipes de tecnologia. Ela reúne em "
+            "um só lugar métricas de infraestrutura, desempenho de aplicações (APM), logs, experiência do usuário e "
+            "segurança, permitindo acompanhar e resolver problemas em sistemas na nuvem. A receita vem de assinaturas "
+            "cobradas pelo uso, e a empresa cresce vendendo mais produtos para a mesma base de clientes.",
+    "pltr": "A Palantir desenvolve softwares de análise e integração de dados e de inteligência artificial para governos e "
+            "empresas. Suas plataformas são o Gotham (usado por agências de defesa e inteligência), o Foundry (para "
+            "operações de empresas), o AIP (que aplica modelos de IA aos dados e processos do cliente) e o Apollo (para "
+            "implantação de software). O governo dos EUA é seu maior cliente, mas o segmento comercial vem crescendo "
+            "rápido.",
+    "now": "A ServiceNow vende uma plataforma de software na nuvem (Now Platform) que automatiza fluxos de trabalho dentro das "
+           "empresas. Começou com gestão de serviços de TI (ITSM) e se expandiu para atendimento ao cliente, recursos "
+           "humanos, segurança, finanças e desenvolvimento de aplicações sem código, com agentes de IA integrados. A receita "
+           "vem de assinaturas, principalmente de grandes empresas e governos.",
+    "amzn": "A Amazon é a maior empresa de comércio eletrônico do mundo e também a maior provedora de computação em nuvem, "
+            "pela AWS (Amazon Web Services), que gera a maior parte do lucro operacional. Além das vendas próprias, cobra "
+            "comissões e serviços de logística de vendedores terceiros e tem um negócio de publicidade em rápido "
+            "crescimento. Também oferece a assinatura Prime (frete, vídeo e música) e tem lojas físicas, como a Whole Foods.",
+    "aapl": "A Apple projeta e vende aparelhos eletrônicos de consumo, com destaque para o iPhone, que gera cerca de metade da "
+            "receita, além de Mac, iPad, Apple Watch, AirPods e Vision Pro. O segmento de serviços (App Store, iCloud, "
+            "Apple Music, Apple TV+, Apple Pay e o acordo do Google como buscador padrão) cresce mais rápido e tem margens "
+            "bem maiores. O modelo integra hardware, software próprio (iOS e macOS) e chips próprios.",
+    "googl": "A Alphabet é a controladora do Google. A maior parte da receita vem de publicidade na Busca, no YouTube e na "
+             "rede de sites parceiros. Também tem o Google Cloud (infraestrutura de nuvem, IA e Workspace), assinaturas e "
+             "dispositivos (YouTube Premium, Google One, Android e Pixel) e os chips de IA próprios (TPUs). Em Other Bets ficam "
+             "projetos de longo prazo, como a Waymo (carros autônomos).",
+    "meta": "A Meta é dona das redes sociais Facebook, Instagram, WhatsApp, Messenger e Threads, usadas por mais de 3 bilhões "
+            "de pessoas por dia. Quase toda a receita vem de publicidade nesses aplicativos. Também investe pesado em "
+            "inteligência artificial (modelos Llama e assistente Meta AI) e no Reality Labs, que desenvolve óculos de "
+            "realidade virtual e aumentada (Quest e óculos Ray-Ban Meta) e ainda dá prejuízo.",
+    "msft": "A Microsoft é uma das maiores empresas de software e de nuvem do mundo. Seus negócios são a nuvem Azure, o "
+            "Office/Microsoft 365, o Windows, o LinkedIn, o Dynamics (software de gestão) e a área de games (Xbox e "
+            "Activision Blizzard). É também a principal parceira e investidora da OpenAI, e vende ferramentas de IA como o "
+            "Copilot integradas aos seus produtos. A maior parte da receita é recorrente, vinda de assinaturas e da nuvem.",
+    "nflx": "A Netflix é a maior plataforma de streaming de vídeo por assinatura do mundo, com centenas de milhões de "
+            "assinantes em mais de 190 países. Produz e licencia séries, filmes, documentários e programas ao vivo, e "
+            "também tem jogos. A receita vem principalmente das assinaturas mensais, complementada por um plano mais "
+            "barato com anúncios, que fez a publicidade virar uma nova fonte de receita.",
+}
+
+
 def nome_setor(setor: str) -> str:
     return SETORES.get(setor, setor.replace("_", " ").capitalize())
 
@@ -222,7 +362,26 @@ def carregar(caminho: str, aba: str, _mtime: float) -> pd.DataFrame:
         df["periodo"] = periodo_trimestral(datas, ticker).to_numpy()
         df["_data"] = datas
         df = df.sort_values("_data")
+    if "valor_mercado" in df.columns and _acoes_em_milhares(caminho, aba):
+        df["valor_mercado"] = pd.to_numeric(df["valor_mercado"], errors="coerce") / 1000
     return df.reset_index(drop=True)
+
+
+def _acoes_em_milhares(caminho: str, aba: str) -> bool:
+    """O notebook grava o valor de mercado como preco x acoes x 1000, na unidade das acoes
+    do income statement: com acoes em milhoes o resultado sai em US$ mil (padrao do app);
+    com acoes em milhares (ex.: CDNS, KLAC, PLTR) sai em US$. A maior empresa em milhoes
+    tem ~25 mil (NVDA) e a menor em milhares ~90 mil (BWXT), dai o corte de 50 mil."""
+    ticker = Path(caminho).stem.removesuffix("_indicators")
+    demonstrativo = Path(caminho).with_name(f"{ticker}_{aba.removeprefix('indicators_')}.xlsx")
+    try:
+        dre = pd.read_excel(demonstrativo, sheet_name="income_statement", index_col=0)
+    except (OSError, ValueError):
+        return False
+    if "Number of Shares - Basic" not in dre.index:
+        return False
+    acoes = pd.to_numeric(dre.loc[["Number of Shares - Basic"]].iloc[0], errors="coerce")
+    return bool(acoes.median() > 50_000)
 
 
 def escala(df: pd.DataFrame, coluna: str) -> pd.Series:
@@ -455,9 +614,22 @@ def comparativo(catalogo: dict, tipo: str, setores: list[str], periodo: str | No
 
 
 def ranking_barras(dados: pd.DataFrame, coluna: str, cores: dict, destaque: str) -> go.Figure:
-    metrica, serie = METRICAS[coluna], dados.dropna(subset=[coluna]).copy()
+    metrica = METRICAS[coluna]
+    # Valores fora do ranking ficam no fim, com uma barra cinza curta e um rotulo:
+    # P/L e EV/EBITDA zero, negativo (prejuizo) ou ausente; margens negativas.
+    excluidas, rotulo, explicacao = dados.iloc[0:0], "", ""
     if coluna in SO_POSITIVOS:
-        serie = serie[serie[coluna] > 0]
+        valido = dados[coluna] > 0
+        excluidas = dados[~valido].sort_values("Empresa")
+        serie = dados[valido].copy()
+        rotulo, explicacao = "prejuízo / n.d.", "não calculado (prejuízo ou dado ausente)"
+    elif coluna in MARGENS:
+        serie = dados.dropna(subset=[coluna])
+        excluidas = serie[serie[coluna] < 0].sort_values(coluna, ascending=False)
+        serie = serie[serie[coluna] >= 0].copy()
+        rotulo, explicacao = "margem negativa", "margem negativa"
+    else:
+        serie = dados.dropna(subset=[coluna]).copy()
     serie = serie.sort_values(coluna, ascending=RANKING[coluna] == "menor")
     sentido = "menor é melhor" if RANKING[coluna] == "menor" else "maior é melhor"
     fig = go.Figure(go.Bar(x=serie[coluna], y=serie["Empresa"], orientation="h",
@@ -465,11 +637,25 @@ def ranking_barras(dados: pd.DataFrame, coluna: str, cores: dict, destaque: str)
                            text=[numero(v) for v in serie[coluna]], textposition="outside", cliponaxis=False,
                            customdata=serie[["Setor", "Período"]].values,
                            hovertemplate=f"<b>%{{y}}</b><br>{metrica.label}: %{{text}}<br>%{{customdata[0]}} · %{{customdata[1]}}<extra></extra>"))
+    if not excluidas.empty:
+        comprimento = serie[coluna].max() * 0.06 if not serie.empty and serie[coluna].max() > 0 else 1
+        # Nas margens o valor real vai junto no hover; em P/L e EV/EBITDA ele nao tem significado.
+        valores = [f" ({numero(v)})" if coluna in MARGENS else "" for v in excluidas[coluna]]
+        fig.add_trace(go.Bar(x=[comprimento] * len(excluidas), y=excluidas["Empresa"], orientation="h",
+                             marker={'color': [cores["serie"][0] if empresa == destaque else cores["neutro"] for empresa in excluidas["Empresa"]],
+                                     'opacity': 0.35, 'line': {'width': 0}},
+                             text=[rotulo] * len(excluidas), textposition="outside", cliponaxis=False,
+                             textfont={'color': cores["texto_2"]},
+                             customdata=np.column_stack([excluidas[["Setor", "Período"]].values, valores]),
+                             hovertemplate=(f"<b>%{{y}}</b><br>{metrica.label}: {explicacao}%{{customdata[2]}}"
+                                            "<br>%{customdata[0]} · %{customdata[1]}<extra></extra>")))
+    total = len(serie) + len(excluidas)
     fig.update_layout(title={'text': f"{metrica.label} · {sentido}", 'font': {'size': 15, 'color': cores["texto"]}, 'x': 0, 'xanchor': "left"},
-                      height=max(260, 26 * len(serie) + 90), margin={'l': 8, 'r': 64, 't': 52, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      height=max(260, 26 * total + 90), margin={'l': 8, 'r': 64, 't': 52, 'b': 8}, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font={'color': cores["texto_2"], 'size': 12}, showlegend=False, bargap=0.3)
     fig.update_xaxes(showgrid=True, gridcolor=cores["grade"], zeroline=True, zerolinecolor=cores["grade"], title=metrica.unidade)
-    fig.update_yaxes(type="category", autorange="reversed", showgrid=False)
+    fig.update_yaxes(type="category", autorange="reversed", showgrid=False,
+                     categoryorder="array", categoryarray=[*serie["Empresa"], *excluidas["Empresa"]])
     return fig
 
 
@@ -526,6 +712,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "servicenow": "B51", "now": "B51",
         "ge_vernova": "B51", "gev": "B51",
         "bwxt": "B51",
+        "bloom_energy": "B51", "be": "B51",
         "qualcomm": "B51", "qcom": "B51",
         "synopsys": "B51", "snps": "B51",
     }
@@ -1112,10 +1299,22 @@ for faixa in (destaques[:4], destaques[4:]):
             delta = None if anterior is None or pd.isna(atual) or pd.isna(anterior) else atual - anterior
             coluna_st.metric(metrica.label, fmt(atual, metrica.tipo), None if delta is None else fmt(delta, metrica.tipo), help=metrica.ajuda or None)
 
-abas = st.tabs(["Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Fraude", "Explorar", "Dados", "Comparação múltiplos", "Indicadores gerais", "DCF valuation", "DCF valuation tabela", "LPA vs projeção"])
+aba_sobre, *abas = st.tabs(["Sobre a empresa", "Valuation", "Rentabilidade", "Endividamento", "Fluxo de caixa", "Proventos", "Fraude", "Explorar", "Dados", "Comparação múltiplos", "Indicadores gerais", "DCF valuation", "DCF valuation tabela", "LPA vs projeção"])
 
 def existentes(*colunas: str) -> list[str]:
     return [coluna for coluna in colunas if coluna in disponiveis]
+
+with aba_sobre:
+    st.subheader(f"{titulo_empresa} ({ticker_arquivo.upper()})")
+    st.write(SOBRE_EMPRESA.get(ticker_arquivo.lower(),
+                               "Ainda não há texto para esta empresa. Inclua-o em `SOBRE_EMPRESA`, no início do app."))
+    # Grafo de receita: <raiz>/<setor>/<empresa>/<ticker>_grafo_receita_<periodo>.html (o mais recente).
+    pasta_grafo = Path(RAIZ_GRAFO_RECEITA) / setor / empresa
+    grafos = sorted(pasta_grafo.glob(f"{ticker_arquivo.lower()}_grafo_receita_*.html"), key=lambda p: p.stat().st_mtime)
+    if grafos:
+        st.subheader("Como a empresa gera receita")
+        st.caption(f"Grafo interativo: passe o mouse ou clique nos nós para ver o detalhe · {grafos[-1].name}")
+        components.html(grafos[-1].read_text(encoding="utf-8"), height=ALTURA_GRAFO_RECEITA, scrolling=True)
 
 with abas[0]:
     bloco(df, cores, [(linhas, existentes("pl_damodaran", "pl", "pvp", "ev_ebitda"), "Múltiplos de mercado"),
