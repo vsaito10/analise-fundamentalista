@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import reduce
 
 import numpy as np
@@ -1775,7 +1775,7 @@ def ativo_fechamento_trimestral(
         ultimo_fechamento_hist = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now(tz=timezone.utc).year
+        ano_atual_int = datetime.now(tz=UTC).year
 
         # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
         ultimo_fechamento_filt_atual = ultimo_fechamento_mes.loc[str(ano_atual_int)]
@@ -1826,7 +1826,7 @@ def ativo_fechamento_trimestral(
         ultimo_fechamento_hist = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now(tz=timezone.utc).year
+        ano_atual_int = datetime.now(tz=UTC).year
 
         # Filtrando pelo ano atual, selecionando apenas as datas do ano atual
         ultimo_fechamento_filt_atual = ultimo_fechamento_mes.loc[str(ano_atual_int)]
@@ -1924,7 +1924,7 @@ def ativo_fechamento_trimestral_csv(
         ultimo_fechamento_mes = fechamento_trimestral_filt.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now(tz=timezone.utc).year
+        ano_atual_int = datetime.now(tz=UTC).year
         # Ano do lançamento mais recente
         ano_lancamento_mais_recente = pl_series_dt_refer[-1].year
 
@@ -2007,7 +2007,7 @@ def ativo_fechamento_trimestral_csv(
         ultimo_fechamento_mes_pn = fechamento_trimestral_filt_pn.loc[primeiro_ano_str:ultimo_ano_str]
 
         # Ano atual
-        ano_atual_int = datetime.now(timezone.utc).year
+        ano_atual_int = datetime.now(tz=UTC).year
         # Ano do lançamento mais recente
         ano_lancamento_mais_recente = pl_series_dt_refer[-1].year
 
@@ -5983,7 +5983,7 @@ def verificar_codigos_dfc_anual(
         A funcao imprime no console a descricao (`ds_conta`) e o valor
         (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
     """
-    dt_refer = datetime(ano, 12, 31)  # noqa: DTZ001
+    dt_refer = datetime(ano, 12, 31)
     dt_refer_label = dt_refer.strftime("%Y-%m-%d")
 
     df_ano = (
@@ -6048,7 +6048,7 @@ def verificar_codigos_dfc_trimestral(
         A funcao imprime no console a descricao (`ds_conta`) e o valor
         (`vl_conta`) de cada codigo encontrado, alem dos codigos ausentes.
     """
-    dt_refer = datetime(ano, mes, 30 if mes in {6, 9} else 31)  # noqa: DTZ001
+    dt_refer = datetime(ano, mes, 30 if mes in {6, 9} else 31)
     dt_refer_label = dt_refer.strftime("%Y-%m-%d")
 
     df_trimestre = (

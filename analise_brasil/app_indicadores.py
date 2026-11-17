@@ -13,17 +13,19 @@ em R$ mil; o valor de mercado vem em R$ (unidade). O app converte tudo para
 R$ bilhões nos gráficos.
 """
 
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-import tempfile
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 from curl_cffi.requests import RequestsError
 from plotly.subplots import make_subplots
-from scipy.stats import norm, t as student_t
+from scipy.stats import norm
+from scipy.stats import t as student_t
 from yfinance.exceptions import YFException
 
 RAIZ_PADRAO = r'C:\B3\historico-arquivos\indicadores_fundamentalistas'
@@ -53,6 +55,121 @@ TICKERS_B3 = {
     'prio': 'PRIO3.SA', 'radl': 'RADL3.SA', 'rani': 'RANI3.SA', 'rent': 'RENT3.SA',
     'sbfg': 'SBFG3.SA', 'suzb': 'SUZB3.SA', 'taee': 'TAEE3.SA', 'vale': 'VALE3.SA',
     'viva': 'VIVA3.SA', 'vulc': 'VULC3.SA', 'wege': 'WEGE3.SA',
+}
+
+# Grafo de receita da aba "Sobre a empresa": <raiz>/<setor>/<ticker>/<ticker>_grafo_receita_<periodo>.html
+RAIZ_GRAFO_RECEITA = r'C:\B3\historico-arquivos\grafo_receita'
+ALTURA_GRAFO_RECEITA = 1450
+
+# Texto curto da aba "Sobre a empresa", por código-base (nome da pasta da empresa).
+SOBRE_EMPRESA = {
+    'abev': 'A Ambev é a maior cervejaria da América Latina e é controlada pela belga AB InBev. Produz e vende cervejas '
+            'de marcas como Brahma, Skol, Antarctica, Stella Artois, Budweiser, Corona e Michelob Ultra, além de '
+            'refrigerantes (Guaraná Antarctica e engarrafamento da Pepsi), águas e bebidas não alcoólicas. Opera no '
+            'Brasil, na América Central e Caribe, na América do Sul e no Canadá, e vende principalmente para bares e '
+            'mercados, em boa parte pela plataforma digital BEES; também tem o app de entregas Zé Delivery.',
+    'alup': 'A Alupar é uma holding brasileira de energia focada principalmente em transmissão de energia elétrica, com '
+            'linhas no Brasil, na Colômbia e no Peru. Também tem usinas de geração (hidrelétricas, PCHs, eólicas e '
+            'solares). A maior parte da receita vem da Receita Anual Permitida (RAP) das concessões de transmissão, '
+            'definida em leilão e corrigida pela inflação, o que dá previsibilidade ao caixa.',
+    'axia': 'A Axia Energia, nome adotado em 2025 pela antiga Eletrobras, é a maior empresa de energia elétrica da América '
+            'Latina. Tem um grande parque de geração, majoritariamente hidrelétrico e de baixa emissão, e uma das maiores '
+            'redes de transmissão do país. Privatizada em 2022, vende energia em contratos de longo prazo nos mercados '
+            'regulado e livre e recebe a Receita Anual Permitida (RAP) das linhas de transmissão.',
+    'azza': 'A Azzas 2154 nasceu em 2024 da fusão da Arezzo&Co com o Grupo Soma e é a maior empresa de moda e calçados '
+            'do Brasil. Reúne marcas como Arezzo, Schutz, Anacapri, Alexandre Birman, Farm, Animale, Hering, Foxton e '
+            'Maria Filó, vendidas em lojas próprias, franquias, lojas multimarcas e e-commerce. A Farm também cresce no '
+            'exterior com a Farm Rio.',
+    'ceab': 'A C&A Modas é uma das maiores varejistas de moda do Brasil, com centenas de lojas e e-commerce. Vende roupas '
+            'femininas, masculinas e infantis, calçados, acessórios, beleza e celulares. Além da venda de mercadorias, '
+            'tem receita de serviços financeiros, como o cartão C&A e empréstimos aos clientes.',
+    'cmig': 'A Cemig é uma empresa integrada de energia controlada pelo governo de Minas Gerais. Atua em distribuição de '
+            'energia, com uma das maiores redes do país, em geração (principalmente hidrelétricas), transmissão e '
+            'comercialização de energia no mercado livre, além da distribuição de gás natural pela Gasmig. A '
+            'distribuição é o maior negócio e tem tarifas reguladas pela ANEEL.',
+    'cple': 'A Copel é uma empresa integrada de energia do Paraná que virou uma corporação sem controlador definido após a '
+            'privatização em 2023. Atua em geração (hidrelétricas e eólicas), transmissão, distribuição de energia para '
+            'praticamente todo o Paraná e comercialização no mercado livre. A distribuição tem tarifas reguladas pela '
+            'ANEEL, e a geração vende energia em contratos de longo prazo.',
+    'egie': 'A Engie Brasil Energia é a maior geradora privada de energia do Brasil e é controlada pelo grupo francês '
+            'Engie. Tem usinas hidrelétricas, eólicas e solares e vende energia em contratos de longo prazo para '
+            'distribuidoras e grandes consumidores. Também atua em transmissão de energia e tem participação na TAG, '
+            'dona de uma grande malha de gasodutos.',
+    'embj': 'A Embraer é a fabricante brasileira de aviões e a terceira maior do mundo em aviação comercial. Atua em quatro '
+            'frentes: jatos comerciais de até 150 assentos (família E-Jets E2), jatos executivos (Phenom e Praetor), '
+            'defesa e segurança (cargueiro KC-390 Millennium e Super Tucano) e serviços e suporte. Também controla a Eve, '
+            'que desenvolve aeronaves elétricas de pouso vertical (eVTOL). A maior parte da receita é em dólar.',
+    'enev': 'A Eneva é a maior operadora privada de gás natural em terra do Brasil e integra a produção de gás com a '
+            'geração de energia elétrica: extrai gás nas bacias do Parnaíba (MA) e do Amazonas e o queima em usinas '
+            'termelétricas próprias ao lado dos campos. Também tem térmicas a gás importado e a carvão, usinas solares e '
+            'vende gás para indústrias. Boa parte da receita é fixa, vinda de contratos que pagam pela disponibilidade '
+            'das térmicas.',
+    'eqtl': 'A Equatorial é uma holding de infraestrutura que cresceu comprando distribuidoras de energia com problemas e '
+            'melhorando sua operação. Tem distribuidoras no Maranhão, Pará, Piauí, Alagoas, Rio Grande do Sul, Amapá e '
+            'Goiás, além de linhas de transmissão, geração renovável e saneamento. Desde 2024 é a acionista de '
+            'referência da Sabesp. A maior parte da receita vem das tarifas de distribuição reguladas pela ANEEL.',
+    'isae': 'A ISA Energia Brasil (antiga ISA CTEEP) é uma das maiores transmissoras de energia elétrica do Brasil e é '
+            'controlada pela colombiana ISA. Opera linhas e subestações responsáveis pela transmissão de grande parte da '
+            'energia consumida no estado de São Paulo e em outros estados. A receita vem da Receita Anual Permitida (RAP) '
+            'das concessões, regulada pela ANEEL e corrigida pela inflação.',
+    'klbn': 'A Klabin é a maior produtora e exportadora de papéis para embalagens do Brasil. Fabrica papelcartão, papel '
+            'kraftliner, embalagens de papelão ondulado e sacos industriais, além de celulose de fibra curta, de fibra '
+            'longa e fluff. Tem florestas próprias de pinus e eucalipto no Paraná e em Santa Catarina, o que reduz o custo '
+            'da madeira, e vende tanto no Brasil quanto no exterior.',
+    'lren': 'A Lojas Renner é a maior varejista de moda do Brasil. Vende roupas, calçados, acessórios e beleza pelas lojas '
+            'Renner e Youcom no Brasil, no Uruguai e na Argentina, e pelo e-commerce. Desenvolve as próprias coleções e '
+            'controla a cadeia de suprimentos. Também tem a Realize, sua financeira, que oferece cartão de crédito e '
+            'empréstimos aos clientes.',
+    'mils': 'A Mills é a maior empresa de locação de plataformas elevatórias de trabalho do Brasil, equipamentos usados em '
+            'construção, indústria, logística e manutenção para trabalho em altura. Também aluga máquinas pesadas da '
+            'chamada linha amarela (escavadeiras, tratores e caminhões) e vende equipamentos usados. A receita vem '
+            'principalmente da locação, com contratos de curto e médio prazo.',
+    'petr': 'A Petrobras é a maior empresa do Brasil e é controlada pela União. Explora e produz petróleo e gás natural, '
+            'principalmente nos campos do pré-sal, onde tem custos de extração baixos, e é dona da maior parte do parque de '
+            'refino do país. A receita vem da venda de derivados (diesel, gasolina, querosene de aviação, GLP) no Brasil e '
+            'da exportação de petróleo, e acompanha o preço internacional do petróleo e o câmbio.',
+    'prio': 'A PRIO (antiga PetroRio) é a maior petroleira independente do Brasil. Sua estratégia é comprar campos maduros '
+            'de petróleo no mar, principalmente na Bacia de Campos (como Frade, Albacora Leste e Peregrino), e aumentar a '
+            'produção com custo de extração baixo. Quase todo o petróleo é exportado, então a receita é em dólar e '
+            'acompanha o preço do Brent.',
+    'radl': 'A Raia Drogasil (RD Saúde) é a maior rede de farmácias do Brasil, com milhares de lojas das bandeiras Droga Raia '
+            'e Drogasil espalhadas pelo país. Vende medicamentos de marca, genéricos e de especialidade, além de produtos de '
+            'higiene, beleza e marcas próprias, nas lojas e no digital. A escala dá poder de compra junto à indústria '
+            'farmacêutica, e a empresa vem ampliando serviços de saúde.',
+    'rani': 'A Irani Papel e Embalagem fabrica papel para embalagens e embalagens de papelão ondulado, com fábricas em '
+            'Santa Catarina, no Rio Grande do Sul e em Minas Gerais. Usa papel reciclado e madeira de florestas próprias '
+            'de pinus e eucalipto, o que reduz custos e emissões. Vende principalmente para indústrias de alimentos, '
+            'bebidas e bens de consumo no Brasil.',
+    'rent': 'A Localiza&Co é a maior locadora de veículos da América Latina, ampliada pela fusão com a Unidas em 2022. Atua '
+            'em aluguel de carros para pessoas, empresas e motoristas de aplicativo, em gestão e terceirização de frotas e '
+            'em carro por assinatura. Renova a frota com frequência e revende os carros usados na rede própria Seminovos '
+            'Localiza, que também é uma fonte relevante de receita.',
+    'sbfg': 'O Grupo SBF é dono da Centauro, a maior varejista de artigos esportivos do Brasil, com lojas físicas e '
+            'e-commerce. Também controla a Fisia, distribuidora exclusiva dos produtos da Nike no Brasil, que vende para '
+            'lojas multimarcas e diretamente ao consumidor pelas lojas e pelo site da Nike. A receita vem do varejo da '
+            'Centauro e da distribuição da Nike.',
+    'suzb': 'A Suzano é a maior produtora de celulose de eucalipto do mundo. Tem fábricas e florestas próprias no Brasil e '
+            'exporta a maior parte da celulose para Ásia, Europa e América do Norte, onde ela vira papel higiênico, papéis '
+            'e embalagens; por isso, a receita é atrelada ao dólar e ao preço internacional da celulose. Também produz papéis '
+            '(imprimir e escrever, papelcartão) e papel higiênico e guardanapos (tissue).',
+    'taee': 'A Taesa é uma das maiores transmissoras de energia elétrica do Brasil e é controlada pela Cemig e pela '
+            'colombiana ISA. Opera linhas de transmissão em diversos estados por meio de concessões de longo prazo. A receita '
+            'vem da Receita Anual Permitida (RAP), definida em leilão e corrigida pela inflação, o que dá alta '
+            'previsibilidade de caixa e permite pagar dividendos elevados.',
+    'vale': 'A Vale é uma das maiores mineradoras do mundo e uma das maiores produtoras de minério de ferro e pelotas, com '
+            'minas no Pará (Carajás) e em Minas Gerais. Também produz níquel e cobre pela Vale Base Metals. Exporta a maior '
+            'parte da produção, principalmente para siderúrgicas da China, então a receita é em dólar e acompanha o preço '
+            'internacional do minério.',
+    'viva': 'A Vivara é a maior rede de joalherias do Brasil. Vende joias e relógios pela marca Vivara, mais sofisticada, e '
+            'pela Life, linha de prata e acessórios mais acessível, em lojas próprias em shoppings, quiosques e e-commerce. '
+            'Tem fábrica própria em Manaus, na Zona Franca, o que permite controlar o design e os custos de produção.',
+    'vulc': 'A Vulcabras é a maior fabricante de calçados esportivos do Brasil. Produz e vende tênis e roupas da marca própria '
+            'Olympikus e das marcas Mizuno e Under Armour, que tem licença para fabricar e vender no Brasil. Tem fábricas no '
+            'Ceará e na Bahia e vende para lojas de calçados e artigos esportivos e diretamente ao consumidor pelo '
+            'e-commerce.',
+    'wege': 'A WEG é uma multinacional brasileira de equipamentos elétricos e uma das maiores fabricantes de motores elétricos '
+            'do mundo. Também produz geradores, transformadores, aerogeradores, painéis e inversores solares, automação '
+            'industrial e tintas. Tem fábricas em vários países, e cerca de metade da receita vem do exterior.',
 }
 
 # ---------------------------------------------------------------------------
@@ -151,23 +268,40 @@ METRICAS = {
                                           'Acumulado no ano'),
     'reinvestment_rate': Metrica('Taxa de reinvestimento', 'pct', 0.01, 'Reinvestimento sobre NOPAT'),
     'effective_tax_rate': Metrica('Alíquota efetiva de IR', 'pct', 0.01),
+    # Calculados na comparação entre empresas (não existem nos CSVs)
+    'free_cash_flow_yield': Metrica('Free cash flow yield', 'pct', 1, 'Free cash flow sobre valor de mercado'),
+    'dpa': Metrica('DPA', 'rs', 1, 'Dividendo por ação (payout x LPA)'),
 }
 
 
-# Indicadores do ranking entre empresas: coluna -> sentido do "melhor"
+# Indicadores da comparação entre empresas: coluna -> sentido do "melhor".
+# Mesmos indicadores do app dos EUA, exceto margem bruta, operacional e EBITDA e o
+# adjusted free cash flow, que dependem de receita/SBC (ausentes nos CSVs da CVM).
 RANKING = {
+    'valor_mercado': 'maior',
     'l/p': 'maior',
     'p/l': 'menor',
     'ev_ebitda': 'menor',
     'roe': 'maior',
     'roic': 'maior',
+    'margem_liquida': 'maior',
+    'fco': 'maior',
+    'free_cash_flow': 'maior',
+    'free_cash_flow_yield': 'maior',
+    'dpa': 'maior',
+    'buyback': 'maior',
     'dl_ebitda': 'menor',
     'dl_pl': 'menor',
 }
 
 # Múltiplos que não fazem sentido com numerador/denominador negativo (prejuízo,
-# EBITDA negativo): a empresa sai do ranking em vez de aparecer como "a mais barata".
+# EBITDA negativo): a empresa vai para o fim do ranking com uma barra cinza
+# "prejuízo / n.d." em vez de aparecer como "a mais barata".
 SO_POSITIVOS = ('p/l', 'ev_ebitda')
+# Margens negativas também vão para o fim, com a barra cinza "margem negativa".
+MARGENS = ('margem_liquida',)
+# Nos arquivos trimestrais estas colunas só existem como valor do trimestre isolado.
+TRIMESTRE_ISOLADO = {'fco': 'fco_nao_acum', 'buyback': 'buyback_nao_acum'}
 
 
 # ---------------------------------------------------------------------------
@@ -230,11 +364,18 @@ def comparativo(catalogo: dict, tipo: str, setores_sel: list, periodo: str | Non
                 if recorte.empty:
                     continue
                 linha = recorte.iloc[-1]
+            def bruto(col: str, d=d, linha=linha) -> float:
+                col = col if col in d.columns else TRIMESTRE_ISOLADO.get(col, col)
+                return pd.to_numeric(linha[col], errors='coerce') if col in d.columns else float('nan')
+
             registro = {'Empresa': ticker_, 'Setor': nome_setor(setor), 'Período': linha['periodo']}
             for col in RANKING:
-                valor = pd.to_numeric(linha[col], errors='coerce') if col in d.columns else None
-                registro[col] = (float('nan') if valor is None or pd.isna(valor)
-                                 else valor / METRICAS[col].divisor)
+                registro[col] = bruto(col) / METRICAS[col].divisor
+            # Free cash flow (R$ mil) sobre valor de mercado (R$); DPA = payout (%) x LPA
+            valor_mercado = bruto('valor_mercado')
+            registro['free_cash_flow_yield'] = (bruto('free_cash_flow') * 1000 / valor_mercado * 100
+                                                if valor_mercado > 0 else float('nan'))
+            registro['dpa'] = bruto('payout') / 100 * bruto('lpa')
             registros.append(registro)
     return pd.DataFrame(registros, columns=['Empresa', 'Setor', 'Período', *RANKING])
 
@@ -270,23 +411,23 @@ def fmt(valor: float, tipo: str) -> str:
 # ---------------------------------------------------------------------------
 def _layout(fig: go.Figure, cores: dict, titulo: str, unidade: str, n_series: int) -> go.Figure:
     fig.update_layout(
-        title=dict(text=titulo, font=dict(size=15, color=cores['texto']), x=0, xanchor='left'),
+        title={'text': titulo, 'font': {'size': 15, 'color': cores['texto']}, 'x': 0, 'xanchor': 'left'},
         height=360,
-        margin=dict(l=8, r=64, t=56, b=8),
+        margin={'l': 8, 'r': 64, 't': 56, 'b': 8},
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color=cores['texto_2'], size=12),
+        font={'color': cores['texto_2'], 'size': 12},
         hovermode='x unified',
         showlegend=n_series >= 2,
-        legend=dict(orientation='h', yanchor='bottom', y=1.0, xanchor='left', x=0,
-                    bgcolor='rgba(0,0,0,0)', font=dict(color=cores['texto_2'])),
+        legend={'orientation': 'h', 'yanchor': 'bottom', 'y': 1.0, 'xanchor': 'left', 'x': 0,
+                    'bgcolor': 'rgba(0,0,0,0)', 'font': {'color': cores['texto_2']}},
         bargap=0.35,
     )
     fig.update_xaxes(showgrid=False, linecolor=cores['grade'], tickcolor=cores['grade'],
                      ticks='outside', type='category')
     fig.update_yaxes(showgrid=True, gridcolor=cores['grade'], zeroline=True,
                      zerolinecolor=cores['grade'], zerolinewidth=1,
-                     title=dict(text=unidade, font=dict(size=11, color=cores['texto_2'])))
+                     title={'text': unidade, 'font': {'size': 11, 'color': cores['texto_2']}})
     return fig
 
 
@@ -297,8 +438,8 @@ def linhas(df: pd.DataFrame, colunas: list, titulo: str, cores: dict) -> go.Figu
         m, y = METRICAS[col], escala(df, col)
         fig.add_trace(go.Scatter(
             x=df['periodo'], y=y, name=m.label, mode='lines+markers',
-            line=dict(color=cores['serie'][i], width=2),
-            marker=dict(size=8, color=cores['serie'][i]),
+            line={'color': cores['serie'][i], 'width': 2},
+            marker={'size': 8, 'color': cores['serie'][i]},
             hovertemplate=f'{m.label}: %{{customdata}}<extra></extra>',
             customdata=[fmt(v, m.tipo) for v in y],
         ))
@@ -307,7 +448,7 @@ def linhas(df: pd.DataFrame, colunas: list, titulo: str, cores: dict) -> go.Figu
             # em eixo 'category' a anotação usa o índice da categoria, não o rótulo
             fig.add_annotation(x=int(df.index.get_loc(validos.index[-1])), y=float(validos.iloc[-1]),
                                text=numero(validos.iloc[-1]), showarrow=False,
-                               xanchor='left', xshift=8, font=dict(size=11, color=cores['texto_2']))
+                               xanchor='left', xshift=8, font={'size': 11, 'color': cores['texto_2']})
     return _layout(fig, cores, titulo, METRICAS[colunas[0]].unidade, len(colunas))
 
 
@@ -322,9 +463,9 @@ def barras(df: pd.DataFrame, colunas: list, titulo: str, cores: dict) -> go.Figu
                if uma_serie else cores['serie'][i])
         fig.add_trace(go.Bar(
             x=df['periodo'], y=y, name=m.label,
-            marker=dict(color=cor, line=dict(width=0)),
+            marker={'color': cor, 'line': {'width': 0}},
             text=[numero(v) for v in y] if rotular else None,
-            textposition='outside', textfont=dict(size=11, color=cores['texto_2']),
+            textposition='outside', textfont={'size': 11, 'color': cores['texto_2']},
             cliponaxis=False,
             hovertemplate=f'{m.label}: %{{customdata}}<extra></extra>',
             customdata=[fmt(v, m.tipo) for v in y],
@@ -336,36 +477,63 @@ def barras(df: pd.DataFrame, colunas: list, titulo: str, cores: dict) -> go.Figu
 def ranking_barras(dados: pd.DataFrame, col: str, cores: dict, destaque: str) -> go.Figure:
     """Barras horizontais das empresas ordenadas do melhor para o pior no indicador."""
     m = METRICAS[col]
-    s = dados.dropna(subset=[col]).copy()
+    # Valores fora do ranking ficam no fim, com uma barra cinza curta e um rótulo:
+    # P/L e EV/EBITDA zero, negativo (prejuízo) ou ausente; margens negativas.
+    excluidas, rotulo, explicacao = dados.iloc[0:0], '', ''
     if col in SO_POSITIVOS:
-        s = s[s[col] > 0]
+        valido = dados[col] > 0
+        excluidas = dados[~valido].sort_values('Empresa')
+        s = dados[valido].copy()
+        rotulo, explicacao = 'prejuízo / n.d.', 'não calculado (prejuízo ou dado ausente)'
+    elif col in MARGENS:
+        s = dados.dropna(subset=[col])
+        excluidas = s[s[col] < 0].sort_values(col, ascending=False)
+        s = s[s[col] >= 0].copy()
+        rotulo, explicacao = 'margem negativa', 'margem negativa'
+    else:
+        s = dados.dropna(subset=[col]).copy()
     s = s.sort_values(col, ascending=RANKING[col] == 'menor').reset_index(drop=True)
 
     sentido = 'menor é melhor' if RANKING[col] == 'menor' else 'maior é melhor'
     fig = go.Figure(go.Bar(
         x=s[col], y=s['Empresa'], orientation='h',
-        marker=dict(color=[cores['serie'][0] if e == destaque else cores['neutro']
-                           for e in s['Empresa']], line=dict(width=0)),
+        marker={'color': [cores['serie'][0] if e == destaque else cores['neutro']
+                           for e in s['Empresa']], 'line': {'width': 0}},
         text=[numero(v) for v in s[col]], textposition='outside',
-        textfont=dict(size=11, color=cores['texto_2']), cliponaxis=False,
+        textfont={'size': 11, 'color': cores['texto_2']}, cliponaxis=False,
         customdata=s[['Setor', 'Período']].values,
         hovertemplate=('<b>%{y}</b><br>' + m.label + ': %{text}'
                        '<br>%{customdata[0]} · %{customdata[1]}<extra></extra>'),
     ))
+    if not excluidas.empty:
+        comprimento = s[col].max() * 0.06 if not s.empty and s[col].max() > 0 else 1
+        # Nas margens o valor real vai junto no hover; em P/L e EV/EBITDA ele não tem significado.
+        valores = [f' ({numero(v)}%)' if col in MARGENS else '' for v in excluidas[col]]
+        fig.add_trace(go.Bar(
+            x=[comprimento] * len(excluidas), y=excluidas['Empresa'], orientation='h',
+            marker={'color': [cores['serie'][0] if e == destaque else cores['neutro']
+                               for e in excluidas['Empresa']], 'opacity': 0.35, 'line': {'width': 0}},
+            text=[rotulo] * len(excluidas), textposition='outside',
+            textfont={'size': 11, 'color': cores['texto_2']}, cliponaxis=False,
+            customdata=np.column_stack([excluidas[['Setor', 'Período']].values, valores]),
+            hovertemplate=('<b>%{y}</b><br>' + m.label + ': ' + explicacao + '%{customdata[2]}'
+                           '<br>%{customdata[0]} · %{customdata[1]}<extra></extra>'),
+        ))
     fig.update_layout(
-        title=dict(text=f'{m.label} · {sentido}', font=dict(size=15, color=cores['texto']),
-                   x=0, xanchor='left'),
-        height=max(260, 26 * len(s) + 90),
-        margin=dict(l=8, r=64, t=52, b=8),
+        title={'text': f'{m.label} · {sentido}', 'font': {'size': 15, 'color': cores['texto']},
+                   'x': 0, 'xanchor': 'left'},
+        height=max(260, 26 * (len(s) + len(excluidas)) + 90),
+        margin={'l': 8, 'r': 64, 't': 52, 'b': 8},
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color=cores['texto_2'], size=12),
+        font={'color': cores['texto_2'], 'size': 12},
         showlegend=False, bargap=0.3,
     )
     fig.update_xaxes(showgrid=True, gridcolor=cores['grade'], zeroline=True,
                      zerolinecolor=cores['grade'], zerolinewidth=1,
-                     title=dict(text=m.unidade, font=dict(size=11, color=cores['texto_2'])))
+                     title={'text': m.unidade, 'font': {'size': 11, 'color': cores['texto_2']}})
     fig.update_yaxes(type='category', autorange='reversed', showgrid=False,
-                     linecolor=cores['grade'], tickfont=dict(size=11))
+                     linecolor=cores['grade'], tickfont={'size': 11},
+                     categoryorder='array', categoryarray=[*s['Empresa'], *excluidas['Empresa']])
     return fig
 
 
@@ -443,7 +611,7 @@ def linhas_mercado(dados: pd.DataFrame, titulo: str, unidade: str, cores: dict,
                        else [f'R$ {valor:,.2f}' if pd.notna(valor) else '—' for valor in valores])
         fig.add_trace(go.Scatter(
             x=dados.index, y=valores, name=ticker_, mode='lines',
-            line=dict(color=cores['serie'][indice], width=2),
+            line={'color': cores['serie'][indice], 'width': 2},
             hovertemplate=f'<b>{ticker_}</b>: %{{customdata}}<extra></extra>',
             customdata=texto_hover,
         ))
@@ -474,19 +642,19 @@ def grafico_retornos_logaritmicos(precos: pd.DataFrame, cores: dict) -> go.Figur
             media, desvio = norm.fit(serie)
             valores_x = np.linspace(serie.min(), serie.max(), 100)
             fig.add_trace(go.Scatter(x=valores_x, y=norm.pdf(valores_x, media, desvio), mode='lines',
-                                     line=dict(color=cores['negativo'], width=1), showlegend=False),
+                                     line={'color': cores['negativo'], 'width': 1}, showlegend=False),
                           row=indice, col=1)
-        fig.add_vline(x=0, line=dict(color=cores['negativo'], width=1), row=indice, col=1)
-        fig.add_trace(go.Scatter(x=serie.index, y=serie, mode='lines', line=dict(color=cor, width=1.5),
+        fig.add_vline(x=0, line={'color': cores['negativo'], 'width': 1}, row=indice, col=1)
+        fig.add_trace(go.Scatter(x=serie.index, y=serie, mode='lines', line={'color': cor, 'width': 1.5},
                                  showlegend=False), row=indice, col=2)
-        fig.add_hline(y=0, line=dict(color=cores['negativo'], width=1), row=indice, col=2)
+        fig.add_hline(y=0, line={'color': cores['negativo'], 'width': 1}, row=indice, col=2)
 
     fig.update_layout(
-        title=dict(text='Histogramas e grafico de linhas dos retornos logaritmicos',
-                   font=dict(size=15, color=cores['texto']), x=0, xanchor='left'),
-        height=max(420, 360 * len(retornos.columns)), margin=dict(l=8, r=24, t=56, b=8),
+        title={'text': 'Histogramas e grafico de linhas dos retornos logaritmicos',
+                   'font': {'size': 15, 'color': cores['texto']}, 'x': 0, 'xanchor': 'left'},
+        height=max(420, 360 * len(retornos.columns)), margin={'l': 8, 'r': 24, 't': 56, 'b': 8},
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color=cores['texto_2'], size=12), showlegend=False,
+        font={'color': cores['texto_2'], 'size': 12}, showlegend=False,
     )
     fig.update_xaxes(showgrid=False, linecolor=cores['grade'])
     fig.update_yaxes(showgrid=True, gridcolor=cores['grade'], zeroline=False)
@@ -554,12 +722,12 @@ def heatmap_retornos_anuais(precos: pd.DataFrame, cores: dict) -> go.Figure | No
     fig = go.Figure(go.Heatmap(
         z=matriz.to_numpy(), x=anos, y=matriz.index, text=texto, texttemplate='%{text}',
         colorscale=[[0, cores['negativo']], [0.5, cores['grade']], [1, cores['positivo']]], zmid=0,
-        colorbar=dict(title='%'), hovertemplate='<b>%{y}</b><br>%{x}: %{z:.2f}%<extra></extra>',
+        colorbar={'title': '%'}, hovertemplate='<b>%{y}</b><br>%{x}: %{z:.2f}%<extra></extra>',
     ))
-    fig.update_layout(title=dict(text='Heatmap dos retornos anuais', font=dict(size=15, color=cores['texto']),
-                                 x=0, xanchor='left'), height=max(260, 44 * len(matriz) + 145),
-                      margin=dict(l=8, r=64, t=56, b=8), paper_bgcolor='rgba(0,0,0,0)',
-                      plot_bgcolor='rgba(0,0,0,0)', font=dict(color=cores['texto_2'], size=12))
+    fig.update_layout(title={'text': 'Heatmap dos retornos anuais', 'font': {'size': 15, 'color': cores['texto']},
+                                 'x': 0, 'xanchor': 'left'}, height=max(260, 44 * len(matriz) + 145),
+                      margin={'l': 8, 'r': 64, 't': 56, 'b': 8}, paper_bgcolor='rgba(0,0,0,0)',
+                      plot_bgcolor='rgba(0,0,0,0)', font={'color': cores['texto_2'], 'size': 12})
     fig.update_xaxes(side='bottom', type='category')
     fig.update_yaxes(type='category', autorange='reversed')
     return fig
@@ -574,13 +742,13 @@ def heatmap_correlacao(precos: pd.DataFrame, cores: dict) -> go.Figure | None:
     fig = go.Figure(go.Heatmap(
         z=correlacao.to_numpy(), x=correlacao.columns, y=correlacao.index, text=texto, texttemplate='%{text}',
         colorscale=[[0, cores['negativo']], [0.5, cores['grade']], [1, cores['positivo']]],
-        zmin=-1, zmax=1, zmid=0, colorbar=dict(title='Correlacao'),
+        zmin=-1, zmax=1, zmid=0, colorbar={'title': 'Correlacao'},
         hovertemplate='<b>%{y} x %{x}</b><br>Correlacao: %{z:.2f}<extra></extra>',
     ))
-    fig.update_layout(title=dict(text='Heatmap de correlacao', font=dict(size=15, color=cores['texto']),
-                                 x=0, xanchor='left'), height=max(300, 48 * len(correlacao) + 145),
-                      margin=dict(l=8, r=86, t=56, b=8), paper_bgcolor='rgba(0,0,0,0)',
-                      plot_bgcolor='rgba(0,0,0,0)', font=dict(color=cores['texto_2'], size=12))
+    fig.update_layout(title={'text': 'Heatmap de correlacao', 'font': {'size': 15, 'color': cores['texto']},
+                                 'x': 0, 'xanchor': 'left'}, height=max(300, 48 * len(correlacao) + 145),
+                      margin={'l': 8, 'r': 86, 't': 56, 'b': 8}, paper_bgcolor='rgba(0,0,0,0)',
+                      plot_bgcolor='rgba(0,0,0,0)', font={'color': cores['texto_2'], 'size': 12})
     fig.update_xaxes(side='bottom', type='category')
     fig.update_yaxes(type='category', autorange='reversed')
     return fig
@@ -597,14 +765,14 @@ def grafico_risco_retorno(precos: pd.DataFrame, tabela: pd.DataFrame, cores: dic
         fig.add_trace(go.Scatter(
             x=[linha['Volatilidade anualizada']], y=[linha['CAGR']], mode='markers+text', name=linha['Acao'],
             text=[linha['Acao']], textposition='top center',
-            marker=dict(size=13, color=cores['serie'][indice], line=dict(color=cores['texto'], width=1)),
+            marker={'size': 13, 'color': cores['serie'][indice], 'line': {'color': cores['texto'], 'width': 1}},
             hovertemplate=(f"<b>{linha['Acao']}</b><br>Volatilidade anualizada: "
                            '%{x:.2f}%<br>CAGR: %{y:.2f}%<extra></extra>'),
         ))
-    fig.update_layout(title=dict(text='Risco e retorno', font=dict(size=15, color=cores['texto']), x=0,
-                                 xanchor='left'), height=430, margin=dict(l=8, r=24, t=56, b=8),
+    fig.update_layout(title={'text': 'Risco e retorno', 'font': {'size': 15, 'color': cores['texto']}, 'x': 0,
+                                 'xanchor': 'left'}, height=430, margin={'l': 8, 'r': 24, 't': 56, 'b': 8},
                       paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                      font=dict(color=cores['texto_2'], size=12), showlegend=False)
+                      font={'color': cores['texto_2'], 'size': 12}, showlegend=False)
     fig.update_xaxes(title='Volatilidade anualizada (%)', showgrid=True, gridcolor=cores['grade'], zeroline=False)
     fig.update_yaxes(title='CAGR (%)', showgrid=True, gridcolor=cores['grade'], zeroline=True,
                      zerolinecolor=cores['negativo'], zerolinewidth=1)
@@ -616,10 +784,7 @@ def grafico_risco_retorno(precos: pd.DataFrame, tabela: pd.DataFrame, cores: dic
 # ---------------------------------------------------------------------------
 st.set_page_config(page_title='Indicadores fundamentalistas', page_icon='📊', layout='wide')
 
-try:
-    tema = st.context.theme.type
-except Exception:
-    tema = 'light'
+tema = getattr(st.context.theme, 'type', None) or 'light'
 cores = PALETA.get(tema, PALETA['light'])
 
 # --- Seleção do arquivo: setor -> empresa -> periodicidade ------------------
@@ -674,14 +839,26 @@ for faixa in (destaques[:4], destaques[4:]):
         coluna.metric(m.label, fmt(atual, m.tipo),
                       None if delta is None else fmt(delta, m.tipo), help=m.ajuda or None)
 
-abas = st.tabs(['Valuation', 'Rentabilidade', 'Endividamento', 'Fluxo de caixa',
-                'Proventos', 'Explorar', 'Dados', 'Ranking', 'Indicadores gerais'])
+aba_sobre, *abas = st.tabs(['Sobre a empresa', 'Valuation', 'Rentabilidade', 'Endividamento', 'Fluxo de caixa',
+                'Proventos', 'Explorar', 'Dados', 'Comparação múltiplos', 'Indicadores gerais'])
 
 
 def existentes(*colunas: str) -> list:
     """Mantém só as colunas presentes no arquivo aberto, na ordem pedida."""
     return [c for c in colunas if c in disponiveis]
 
+
+with aba_sobre:
+    st.subheader(f'{ticker} ({ticker_b3_sugerido(ticker).removesuffix(".SA")})')
+    st.write(SOBRE_EMPRESA.get(ticker.lower(),
+                               'Ainda não há texto para esta empresa. Inclua-o em `SOBRE_EMPRESA`, no início do app.'))
+    # Grafo de receita: <raiz>/<setor>/<ticker>/<ticker>_grafo_receita_<periodo>.html (o mais recente).
+    pasta_grafo = Path(RAIZ_GRAFO_RECEITA) / setor / ticker.lower()
+    grafos = sorted(pasta_grafo.glob(f'{ticker.lower()}_grafo_receita_*.html'), key=lambda p: p.stat().st_mtime)
+    if grafos:
+        st.subheader('Como a empresa gera receita')
+        st.caption(f'Grafo interativo: passe o mouse ou clique nos nós para ver o detalhe · {grafos[-1].name}')
+        components.html(grafos[-1].read_text(encoding='utf-8'), height=ALTURA_GRAFO_RECEITA, scrolling=True)
 
 with abas[0]:
     bloco(df, cores, [
@@ -773,11 +950,6 @@ with abas[7]:
             st.warning('As empresas têm últimos períodos diferentes '
                        f'({", ".join(sorted(dados["Período"].unique()))}). '
                        'Para comparar todas na mesma data, escolha um período específico.')
-        fora = {c: sorted(dados.loc[dados[c] <= 0, 'Empresa']) for c in SO_POSITIVOS}
-        fora = {METRICAS[c].label: e for c, e in fora.items() if e}
-        if fora:
-            st.caption('Fora do ranking por múltiplo negativo (prejuízo ou EBITDA negativo): '
-                       + ' · '.join(f'{k}: {", ".join(v)}' for k, v in fora.items()))
 
         indicadores = list(RANKING)
         for i in range(0, len(indicadores), 2):
@@ -825,7 +997,7 @@ with abas[8]:
                 lambda serie: serie / serie.dropna().iloc[0] - 1 if serie.notna().any() else serie
             ).dropna(how='all')
             grafico_retorno = linhas_mercado(retorno_acumulado, 'Retorno acumulado', '%', cores, formato='pct')
-            grafico_retorno.add_hline(y=0, line=dict(color=cores['negativo'], width=1.5))
+            grafico_retorno.add_hline(y=0, line={'color': cores['negativo'], 'width': 1.5})
             st.plotly_chart(grafico_retorno, width='stretch')
             heatmap = heatmap_retornos_anuais(precos_acoes, cores)
             if heatmap is None:
@@ -837,7 +1009,7 @@ with abas[8]:
                 st.info('O historico selecionado nao contem 252 pregoes para calcular o momentum de um ano.')
             else:
                 grafico_momentum = linhas_mercado(momentum, 'Momentum - 1 ano (252 pregoes)', 'R$', cores)
-                grafico_momentum.add_hline(y=0, line=dict(color=cores['negativo'], width=1.5))
+                grafico_momentum.add_hline(y=0, line={'color': cores['negativo'], 'width': 1.5})
                 st.plotly_chart(grafico_momentum, width='stretch')
             retornos_log = np.log(precos_acoes / precos_acoes.shift(1))
             volatilidade = (retornos_log.rolling(252, min_periods=252).std() * np.sqrt(252)).dropna(how='all')
