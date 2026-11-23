@@ -82,7 +82,8 @@ statement_keys_map = {
         "consolidated and combined statement of income (loss)",
         "consolidated statement of income (loss) (unaudited)",
         "consolidated and combined statement of income (loss) (unaudited)",
-        "combined statement of income (loss) (unaudited)"
+        "combined statement of income (loss) (unaudited)",
+        "condensed consolidated statements of income (unaudited)"
     ],
 
     "income_statement_2": [
@@ -1802,6 +1803,26 @@ def ajustar_mes_02_05_08(dt):
     """
     # Dicionário de substituição de meses
     map_months = {1: 2, 4: 5, 7: 8}
+    
+    if not pd.isna(dt):
+        try:
+            dt = pd.to_datetime(dt)  # garante que é datetime
+            novo_mes = map_months.get(dt.month, dt.month)
+            return dt.replace(month=novo_mes)
+        except (ValueError, TypeError) as e:
+            raise ValueError('O valor fornecido não é uma data válida.') from e
+    return dt
+
+
+def ajustar_mes_02_05_08_v2(dt):
+    """
+    Ajusta o mês de acordo com o mapeamento:
+      - 03 -> 02
+      - 06 -> 05
+      - 09 -> 08
+    """
+    # Dicionário de substituição de meses
+    map_months = {3: 2, 6: 5, 9: 8}
     
     if not pd.isna(dt):
         try:
