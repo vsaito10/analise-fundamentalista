@@ -284,6 +284,12 @@ SOBRE_EMPRESA = {
            "distribuição de conteúdo (CDN), proteção contra ataques DDoS, firewall de aplicações, segurança de acesso para "
            "empresas (Zero Trust) e uma plataforma para desenvolvedores rodarem código e IA na borda da rede. A receita vem "
            "de assinaturas.",
+    "adbe": "A Adobe desenvolve softwares para criação de conteúdo, documentos digitais e marketing. O segmento Digital "
+            "Media, cerca de três quartos da receita, reúne o Creative Cloud (Photoshop, Illustrator, Premiere Pro, "
+            "Lightroom e Adobe Express) e o Document Cloud (Acrobat, o leitor e editor de PDF, e o Acrobat Sign, de "
+            "assinatura eletrônica). O segmento Digital Experience vende a empresas ferramentas de análise de clientes, "
+            "gestão de conteúdo e automação de marketing. A receita vem quase toda de assinaturas, e a Adobe vem "
+            "colocando IA generativa (Firefly) nos seus produtos.",
     "ddog": "A Datadog oferece uma plataforma de monitoramento e segurança na nuvem para equipes de tecnologia. Ela reúne em "
             "um só lugar métricas de infraestrutura, desempenho de aplicações (APM), logs, experiência do usuário e "
             "segurança, permitindo acompanhar e resolver problemas em sistemas na nuvem. A receita vem de assinaturas "
@@ -709,6 +715,7 @@ def _valor_valuation(caminho: Path) -> float | None:
         "palantir": "B51", "pltr": "B51",
         "cloudflare": "B51", "net": "B51",
         "datadog": "B51", "ddog": "B51",
+        "adobe": "B51", "adbe": "B51",
         "servicenow": "B51", "now": "B51",
         "ge_vernova": "B51", "gev": "B51",
         "bwxt": "B51",
